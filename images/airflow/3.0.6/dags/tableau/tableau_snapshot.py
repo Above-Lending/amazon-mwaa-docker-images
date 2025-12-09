@@ -12,6 +12,8 @@ from above.common.constants import (
     TABLEAU_SNAPSHOT_BUCKET_DIRECTORY,
     TABLEAU_SERVER_URL,
     TABLEAU_SITE_ID,
+    S3_CONN_ID,
+    get_s3_datalake_bucket,
 )
 from above.common.slack_alert import task_failure_slack_alert
 
@@ -46,6 +48,10 @@ def _get_tableau_credentials() -> dict[str, str]:
     ),
 )
 def run() -> None:
+    """DAG to snapshot all Tableau workbooks to S3."""
+    tableau_env = _get_tableau_credentials()
+    s3_datalake_bucket = get_s3_datalake_bucket()
+    
     tableau_snapshot: TableauOperator = TableauOperator(
         task_id="snapshot_tableau",
         updated_since=r"{{ data_interval_start.subtract(years=10).strftime('%Y-%m-%dT%H:%M:%SZ') }}",
@@ -53,7 +59,7 @@ def run() -> None:
         server_url=TABLEAU_SERVER_URL,
         token_name=tableau_env["TOKEN_NAME"],
         personal_access_token=tableau_env["TOKEN_SECRET"],
-        s3_bucket=S3_DATALAKE_BUCKET,
+        s3_bucket=s3_datalake_bucket,
         s3_directory=(
             TABLEAU_SNAPSHOT_BUCKET_DIRECTORY
             + "/{{data_interval_start.strftime('%Y-%m-%d')}}"

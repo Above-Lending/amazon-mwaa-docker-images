@@ -78,14 +78,48 @@ def _init_snowflake_hook() -> SnowflakeHook:
         from above.common.constants import get_snowflake_conn_id, get_db_config
         snowflake_hook = SnowflakeHook(get_snowflake_conn_id())
         snowflake_hook.database = get_db_config()["RAW_DATABASE_NAME"]
+        snowflake_hook.schema = RAW_SCHEMA_NAME
     return snowflake_hook
-snowflake_hook.schema = RAW_SCHEMA_NAME
-sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
-snowflake_connection: SnowflakeConnection = snowflake_hook.get_conn()
+
+
+def _get_sql_engine() -> Engine:
+    """Get SQL engine (lazy loaded)."""
+    hook = _init_snowflake_hook()
+    return hook.get_sqlalchemy_engine()
+
+
+def _get_snowflake_connection() -> SnowflakeConnection:
+    """Get Snowflake connection (lazy loaded)."""
+    hook = _init_snowflake_hook()
+    return hook.get_conn()
 
 SQL_DIR: str = os.path.join(os.path.dirname(__file__), "..", "sql")
 LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this
 TWILIO_FIELDS: List[str] = ["caller_name", "line_type_intelligence"]
+
+# Lazy-loaded at runtime
+LOOKUP_LIMIT: int = _get_lookup_limit()
+S3_LOG_DIRECTORY_SUFFIX: str = _get_s3_log_directory()
+
+# These will be fetched from constants at runtime
+def _get_raw_database_name() -> str:
+    """Get RAW database name (lazy loaded)."""
+    from above.common.constants import get_db_config
+    return get_db_config()["RAW_DATABASE_NAME"]
+
+def _get_trusted_database_name() -> str:
+    """Get TRUSTED database name (lazy loaded)."""
+    from above.common.constants import get_db_config
+    return get_db_config()["TRUSTED_DATABASE_NAME"]
+
+def _get_s3_datalake_bucket_name() -> str:
+    """Get S3 datalake bucket name (lazy loaded)."""
+    from above.common.constants import get_s3_datalake_bucket
+    return get_s3_datalake_bucket()
+
+RAW_DATABASE_NAME: str = ""
+TRUSTED_DATABASE_NAME: str = ""
+S3_DATALAKE_BUCKET: str = ""
 # Define all columns for the merge operation to avoid duplication
 MERGE_COLUMNS: List[str] = [
     "PHONE_NUMBER_E164",
@@ -169,7 +203,7 @@ class TwilioLookupOperator(BaseOperator):
 
         upload_string_to_s3(
             string_value=json.dumps(record, indent=2),
-            s3_bucket=S3_DATALAKE_BUCKET,
+            s3_bucket=_get_s3_datalake_bucket_name(),
             s3_key=s3_key,
         )
 
@@ -217,8 +251,8 @@ class TwilioLookupOperator(BaseOperator):
         return self._render_sql_template(
             template_content,
             {
-                "trusted_database": TRUSTED_DATABASE_NAME,
-                "raw_database": RAW_DATABASE_NAME,
+                "trusted_database": _get_trusted_database_name(),
+                "raw_database": _get_raw_database_name(),
                 "raw_schema": RAW_SCHEMA_NAME,
                 "raw_table": RAW_TABLE_NAME,
                 "lookup_refresh_months": LOOKUP_REFRESH_MONTHS,
@@ -239,7 +273,7 @@ class TwilioLookupOperator(BaseOperator):
         rendered = self._render_sql_template(
             template_content,
             {
-                "raw_database": RAW_DATABASE_NAME,
+                "raw_database": _get_raw_database_name(),
                 "raw_schema": RAW_SCHEMA_NAME,
                 "raw_table": RAW_TABLE_NAME,
                 "suffix": suffix,
@@ -351,15 +385,16 @@ class TwilioLookupOperator(BaseOperator):
         suffix: str = "_UPDATES"
 
         merge_query: str = self._build_merge_query(suffix)
+        snowflake_conn = _get_snowflake_connection()
         dataframe_to_snowflake(
             df,
-            database_name=RAW_DATABASE_NAME,
+            database_name=_get_raw_database_name(),
             schema_name=RAW_SCHEMA_NAME,
             table_name=f"{RAW_TABLE_NAME}{suffix}",
             overwrite=True,
-            snowflake_connection=snowflake_connection,
+            snowflake_connection=snowflake_conn,
         )
-        snowflake_connection.cursor().execute(merge_query)
+        snowflake_conn.cursor().execute(merge_query)
 
     def execute(self, context: dict[str, Any]) -> None:
         """Execute the Twilio lookup operator."""
