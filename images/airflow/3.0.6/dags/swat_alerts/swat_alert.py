@@ -20,13 +20,25 @@ import uuid
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from above.common.constants import (SNOWFLAKE_CONN_ID, SNOWFLAKE_SWAT_VIEWS,
-                                    SWAT_YAML_FOLDER, ENVIRONMENT_FLAG)
+from above.common.constants import SNOWFLAKE_SWAT_VIEWS, SWAT_YAML_FOLDER
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-# Slack settings
-SLACK_TOKEN = json.loads(Variable.get("SLACK_TOKEN"))["token"] 
+
+def _get_slack_token() -> str:
+    """Get Slack token from Airflow Variables (lazy loaded)."""
+    return json.loads(Variable.get("SLACK_TOKEN"))["token"]
+
+
+def _get_snowflake_conn_id() -> str:
+    """Get Snowflake connection ID (lazy loaded)."""
+    from above.common.constants import get_snowflake_conn_id
+    return get_snowflake_conn_id()
+
+
+def _get_environment_flag() -> str:
+    """Get environment flag."""
+    return os.getenv("ENVIRONMENT_FLAG", "staging") 
 
 DEFAULT_TIMEOUT: int = 15
 OUTPUT_DIRECTORY = "/tmp"
@@ -55,10 +67,20 @@ CHANNELS = {
     "logs-payments":                 "C04SA0HMDR7"
 }
 
-slack_client = WebClient(token=SLACK_TOKEN, timeout=DEFAULT_TIMEOUT)
+# Lazy-loaded Slack client
+_slack_client = None
+
+
+def _get_slack_client():
+    """Get Slack client (lazy loaded)."""
+    global _slack_client
+    if _slack_client is None:
+        _slack_client = WebClient(token=_get_slack_token(), timeout=DEFAULT_TIMEOUT)
+    return _slack_client
+
 
 def log_error(msg: str, job: str = "") -> None:
-    if ENVIRONMENT_FLAG == "prod":
+    if _get_environment_flag() == "prod":
         send_slack_message(DEBUG_CHANNEL, job, msg)
     else:
         send_slack_message(DEV_CHANNEL, job, msg)
@@ -116,13 +138,13 @@ def convert_local_standard_cron_to_utc(cron_expr: str, local_timezone: str = "Am
 # Function to send messages to Slack
 def send_slack_message(chan: str, title: str, message: str = "") -> None:
     text = f"{title}\n{message}\nTimestamp: {now().to_datetime_string()}"
-    if ENVIRONMENT_FLAG == "prod":
+    if _get_environment_flag() == "prod":
         channel = chan
     else:
         channel = DEV_CHANNEL
     try:
         logger.info(f"Posting message in {channel}")
-        response = slack_client.chat_postMessage(channel=channel, text=f"{text}")
+        response = _get_slack_client().chat_postMessage(channel=channel, text=f"{text}")
         logger.debug(f"postMessage response: {response}")
     except SlackApiError as error:
         log_error(f"Error sending message to channel {channel}: {error}")
@@ -130,14 +152,14 @@ def send_slack_message(chan: str, title: str, message: str = "") -> None:
 
 # Function to send file to Slack
 def send_slack_file(chan: str, filename: str, file_path: str, message: str) -> None:
-    if ENVIRONMENT_FLAG == "prod":
+    if _get_environment_flag() == "prod":
         channel = chan
     else: 
         channel = DEV_CHANNEL
 
     try:
         sleep(1)
-        response = slack_client.files_upload_v2(
+        response = _get_slack_client().files_upload_v2(
             file=file_path,
             title=filename,
             channels=channel,
@@ -152,10 +174,10 @@ def send_slack_file(chan: str, filename: str, file_path: str, message: str) -> N
 
 
 def log_to_snowflake(schema: str, job_name: str, title: str, result_count: int, results: str):
-    if ENVIRONMENT_FLAG != "prod":
+    if _get_environment_flag() != "prod":
         return
     try:
-        snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook = SnowflakeHook(_get_snowflake_conn_id())
         chicago_time = pendulum.now("America/Chicago").to_datetime_string()
         sql = """
             INSERT INTO alerts.logs.alert_logs (log_timestamp, schema_name, job_name, title, result_count, results)
@@ -169,10 +191,10 @@ def log_to_snowflake(schema: str, job_name: str, title: str, result_count: int, 
 
 
 def log_to_snowflake_hist(schema: str, job_name: str, df):
-    if ENVIRONMENT_FLAG != "prod":
+    if _get_environment_flag() != "prod":
         return
     try:
-        snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook = SnowflakeHook(_get_snowflake_conn_id())
         completed_at = pendulum.now("America/Chicago").to_datetime_string()
         job_run_uuid = str(uuid.uuid4())
         alert_key = f"{schema.upper()}::{job_name.upper()}"
@@ -241,7 +263,7 @@ def log_to_snowflake_hist(schema: str, job_name: str, df):
 
 def run_snowflake_query(query: str) -> DataFrame:
     try:
-        snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook = SnowflakeHook(_get_snowflake_conn_id())
         sql_engine = snowflake_hook.get_sqlalchemy_engine()
         dataframe = pd.read_sql(query, sql_engine)
         return dataframe

@@ -13,10 +13,6 @@ from airflow.models import Variable
 from airflow.exceptions import AirflowFailException
 from pendulum import datetime, duration, now
 
-from above.common.constants import (
-    S3_CONN_ID,
-    S3_DATAENGINEERING_BUCKET,
-)
 from above.common.check_memory_usage import check_memory_usage
 from above.common.s3_utils import gzip_json_and_upload_to_s3
 from above.common.slack_alert import task_failure_slack_alert
@@ -26,8 +22,10 @@ logger: logging.Logger = logging.getLogger(__name__)
 THIS_FILENAME: str = str(os.path.basename(__file__).replace(".py", ""))
 DAG_START_DATE: datetime = datetime(2025, 9, 16, tz="UTC")
 
-GDS_CREDENTIALS: Dict = json.loads(Variable.get("gds"))
-AUDIT_LOG_AUTH_TOKEN = GDS_CREDENTIALS.get("audit_log_auth_token")
+
+def _get_gds_credentials() -> Dict:
+    """Get GDS credentials from Airflow Variables (lazy loaded)."""
+    return json.loads(Variable.get("gds"))
 
 S3_SOURCE_DIR = "sources/GDSCaseCenter/audit_logs/"
 CASECENTER_HISTORY_API_URL = "https://casecenter-above-lending-prod.dataview360.com/Above_Lending/above_lending/records/history.json"

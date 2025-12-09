@@ -17,7 +17,6 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 from trustpilot import client
 
-from above.common.constants import RAW_DATABASE_NAME, SNOWFLAKE_CONN_ID
 from above.common.slack_alert import task_failure_slack_alert
 from above.common.snowflake_utils import (
     dataframe_to_snowflake,
@@ -27,14 +26,28 @@ from above.common.snowflake_utils import (
 logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
-snowflake_connection = snowflake_hook.get_conn()
 database_schema: str = "TRUSTPILOT"
-
-trustpilot_env: Dict = json.loads(Variable.get("trustpilot"))
-BUSINESS_UNIT_ID: str = trustpilot_env["BUSINESS_UNIT_ID"]
 api_start_timestamp: DateTime = datetime(1970, 1, 1, tz='UTC')
+
+# Lazy-loaded globals
+snowflake_hook: SnowflakeHook = None
+sql_engine: Engine = None
+snowflake_connection = None
+
+
+def _get_trustpilot_credentials() -> Dict:
+    """Get Trustpilot credentials from Airflow Variables (lazy loaded)."""
+    return json.loads(Variable.get("trustpilot"))
+
+
+def _init_snowflake_connection():
+    """Initialize Snowflake connection (lazy loaded)."""
+    global snowflake_hook, sql_engine, snowflake_connection
+    if snowflake_hook is None:
+        from above.common.constants import get_snowflake_conn_id, get_db_config
+        snowflake_hook = SnowflakeHook(get_snowflake_conn_id())
+        sql_engine = snowflake_hook.get_sqlalchemy_engine()
+        snowflake_connection = snowflake_hook.get_conn()
 
 def get_latest_timestamp_from_table(
         table_name: str, column_name: str

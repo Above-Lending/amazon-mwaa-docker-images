@@ -25,9 +25,10 @@ from above.common.snowflake_utils import query_to_dataframe
 logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
-snowflake_connection = snowflake_hook.get_conn()
+# Lazy-loaded globals - initialized in functions
+snowflake_hook: SnowflakeHook = None
+sql_engine: Engine = None
+snowflake_connection = None
 
 database_schema: str = "SBT"
 temp_table_suffix: str = "_TEMP"
@@ -36,8 +37,24 @@ default_page_size: int = 1000  # API default is 10
 TOKEN_EXPIRATION_IN_SECONDS: int = 30 * 60  # 30 minutes
 api_date_format: str = "MM/DD/YYYY HH:mm:ss"
 api_start_date: datetime = datetime(2023, 5, 1, tz='UTC')
-brands: List = json.loads(Variable.get("sbt_brands"))
-groups: List = json.loads(Variable.get("sbt_groups"))
+
+
+def _get_sbt_config() -> Dict[str, List]:
+    """Get SBT brands and groups from Airflow Variables (lazy loaded)."""
+    return {
+        "brands": json.loads(Variable.get("sbt_brands")),
+        "groups": json.loads(Variable.get("sbt_groups")),
+    }
+
+
+def _init_snowflake_connection():
+    """Initialize Snowflake connection (lazy loaded)."""
+    global snowflake_hook, sql_engine, snowflake_connection
+    if snowflake_hook is None:
+        from above.common.constants import get_snowflake_conn_id
+        snowflake_hook = SnowflakeHook(get_snowflake_conn_id())
+        sql_engine = snowflake_hook.get_sqlalchemy_engine()
+        snowflake_connection = snowflake_hook.get_conn()
 
 
 def _set_access_token() -> Tuple[str, DateTime]:

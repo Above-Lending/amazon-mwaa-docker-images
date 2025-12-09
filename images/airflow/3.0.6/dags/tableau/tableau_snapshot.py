@@ -9,8 +9,6 @@ from airflow.models import Variable
 from tableau.operators.tableau_operator import TableauOperator
 
 from above.common.constants import (
-    S3_CONN_ID,
-    S3_DATALAKE_BUCKET,
     TABLEAU_SNAPSHOT_BUCKET_DIRECTORY,
     TABLEAU_SERVER_URL,
     TABLEAU_SITE_ID,
@@ -22,9 +20,11 @@ logger.setLevel(logging.DEBUG)
 
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 dag_start_date: DateTime = datetime(2024, 6, 1, tz="UTC")
-tableau_env: dict[str, str] = json.loads(Variable.get("tableau"))
-TOKEN_NAME: str = tableau_env["TOKEN_NAME"]
-TOKEN_SECRET: str = tableau_env["TOKEN_SECRET"]
+
+
+def _get_tableau_credentials() -> dict[str, str]:
+    """Get Tableau credentials from Airflow Variables (lazy loaded)."""
+    return json.loads(Variable.get("tableau"))
 
 
 @dag(

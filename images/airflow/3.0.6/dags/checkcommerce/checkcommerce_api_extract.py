@@ -2,52 +2,92 @@ import json
 import logging
 import os
 import requests
-from datetime import datetime, date, timedelta
+import json
+import logging
+import os
+import requests
+from datetime import date, timedelta
 from textwrap import dedent
-from typing import Dict, List
+from typing import Dict
 
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.exceptions import AirflowFailException
 from pandas import DataFrame
-from pendulum import datetime, now, duration
+from pendulum import datetime, now, duration, DateTime
 from snowflake.connector import SnowflakeConnection
 
-from above.common.constants import (
-    RAW_DATABASE_NAME,
-    SNOWFLAKE_CONN_ID,
-)
 from above.common.slack_alert import task_failure_slack_alert
 from above.common.snowflake_utils import dataframe_to_snowflake
 
 logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
-dag_start_date: datetime = datetime(2025, 6, 18, tz="UTC")
-
-
-check_commerce_credentials: Dict = json.loads(Variable.get("checkcommerce"))
-MERCHANT_NUMBER = check_commerce_credentials.get("merchant_number")
-MERCHANT_PASSWORD = check_commerce_credentials.get("merchant_password")
-AUTH_URL = check_commerce_credentials.get("auth_url")
-REPORT_URL = check_commerce_credentials.get("report_url")
+dag_start_date: DateTime = datetime(2025, 6, 18, tz="UTC")
 
 RAW_SCHEMA_NAME: str = "CHECK_COMMERCE"
 
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-snowflake_hook.database = RAW_DATABASE_NAME
-snowflake_hook.schema = RAW_SCHEMA_NAME
-snowflake_connection: SnowflakeConnection = snowflake_hook.get_conn()
+# Lazy-loaded globals
+snowflake_hook: SnowflakeHook = None
+snowflake_connection: SnowflakeConnection = None
 
-PARAMS = {
-    "UserName": MERCHANT_NUMBER,
-    "Password": MERCHANT_PASSWORD,
-    "Action": "Token",
-    "OutputType": "JSON"
-}
 
-def get_token(AUTH_URL: str, PARAMS: dict) -> List:
-    auth_response = requests.get(AUTH_URL, params=PARAMS)
+def _get_checkcommerce_credentials() -> Dict:
+    """Get CheckCommerce credentials from Airflow Variables (lazy loaded)."""
+    return json.loads(Variable.get("checkcommerce"))
+
+
+def _init_snowflake_connection():
+    """Initialize Snowflake connection (lazy loaded)."""
+    global snowflake_hook, snowflake_connection
+    if snowflake_hook is None:
+        from above.common.constants import get_snowflake_conn_id, get_db_config
+
+        snowflake_hook = SnowflakeHook(get_snowflake_conn_id())
+        snowflake_hook.database = get_db_config()["RAW_DATABASE_NAME"]
+        snowflake_hook.schema = RAW_SCHEMA_NAME
+        snowflake_connection = snowflake_hook.get_conn()
+
+
+def _get_auth_params() -> dict:
+    """Get authentication parameters for Check Commerce API (lazy loaded)."""
+    creds = _get_checkcommerce_credentials()
+    return {
+        "UserName": creds.get("merchant_number"),
+        "Password": creds.get("merchant_password"),
+        "Action": "Token",
+        "OutputType": "JSON",
+    }
+
+
+def _get_auth_url() -> str:
+    """Get auth URL from credentials (lazy loaded)."""
+    auth_url = _get_checkcommerce_credentials().get("auth_url")
+    if not auth_url:
+        logger.error("Auth URL not found in credentials")
+        raise AirflowFailException()
+    return auth_url
+
+
+def _get_report_url() -> str:
+    """Get report URL from credentials (lazy loaded)."""
+    report_url = _get_checkcommerce_credentials().get("report_url")
+    if not report_url:
+        logger.error("Report URL not found in credentials")
+        raise AirflowFailException()
+    return report_url
+
+
+def _get_raw_database_name() -> str:
+    """Get raw database name (lazy loaded)."""
+    from above.common.constants import get_db_config
+
+    return get_db_config()["RAW_DATABASE_NAME"]
+
+
+def get_token() -> str:
+    """Get API token from Check Commerce auth endpoint."""
+    auth_response = requests.get(_get_auth_url(), params=_get_auth_params())
     auth_data = auth_response.json()
     TOKEN = auth_data.get("Token")
     if not TOKEN:
@@ -55,9 +95,11 @@ def get_token(AUTH_URL: str, PARAMS: dict) -> List:
         raise AirflowFailException()
     return TOKEN
 
-def make_api_request(REPORT_URL: str, report_params: dict) -> List:
+
+def make_api_request(REPORT_URL: str, report_params: dict) -> requests.Response:
+    """ "Makes an API request to the Check Commerce API and returns the response."""
     try:
-        report_response = requests.get(REPORT_URL, params=report_params)
+        report_response = requests.get(REPORT_URL, params=report_params, timeout=300)
     except ValueError:
         logger.error("Invalid value")
         raise AirflowFailException()
@@ -66,20 +108,24 @@ def make_api_request(REPORT_URL: str, report_params: dict) -> List:
         raise AirflowFailException()
     return report_response
 
-def response_to_dataframe(report_response: List) -> DataFrame:
+
+def response_to_dataframe(report_response: requests.Response) -> DataFrame:
+    """Converts the Check Commerce API response to a Pandas DataFrame."""
+    df = DataFrame()
     try:
         report_data = report_response.json()
-        df = DataFrame(report_data['ReportData']['Table0'])
+        df = DataFrame(report_data["ReportData"]["Table0"])
     except ValueError:
         logger.error("Invalid value")
     except Exception as e:
         logger.error(f"Other error: {e}")
     return df
 
-TOKEN = get_token(AUTH_URL, PARAMS)
 
 @task
-def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_merchant_list(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of merchants from the Check Commerce API
     :return: None
@@ -90,7 +136,7 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "MerchantList",
-        "Parameter_MID": MERCHANT_NUMBER
+        "Parameter_MID": MERCHANT_NUMBER,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
@@ -99,12 +145,12 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['CREATED_AT'] = now("UTC")
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=_get_raw_database_name(),
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -112,9 +158,9 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.MID = target.MID
                 when matched then update set
@@ -197,8 +243,11 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
     else:
         logger.info(report_response.text)
 
+
 @task
-def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str)  -> None:
+def get_and_load_merchant_information(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of merchant information from the Check Commerce API
     :return: None
@@ -209,21 +258,21 @@ def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_U
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "MerchantInformation",
-        "Parameter_MID": MERCHANT_NUMBER
+        "Parameter_MID": MERCHANT_NUMBER,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['CREATED_AT'] = now("UTC")
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=_get_raw_database_name(),
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -231,9 +280,9 @@ def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_U
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.COMP_NUM = target.COMP_NUM
                 when matched then update set
@@ -283,15 +332,18 @@ def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_U
     else:
         logger.info(report_response.text)
 
+
 @task
-def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_invoice_aggregate_line_items(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of invoice line items from the Check Commerce API
     :return: None
     """
 
-    #The current month returns no data
-    #This ensures we get the last month's data
+    # The current month returns no data
+    # This ensures we get the last month's data
     report_month = (date.today() + timedelta(-30)).strftime("%m")
     report_year = (date.today() + timedelta(-30)).strftime("%Y")
 
@@ -302,28 +354,39 @@ def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, 
         "ReportPermDesc": "InvoiceAggregateLineItems",
         "Parameter_MID": MERCHANT_NUMBER,
         "Parameter_Year": report_year,
-        "Parameter_Month": report_month
+        "Parameter_Month": report_month,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['REPORT_MONTH'] = report_month
-            df['REPORT_YEAR'] = report_year
-            df['CREATED_AT'] = now("UTC")
+            from above.common.constants import get_db_config
+
+            raw_db_name = get_db_config()["RAW_DATABASE_NAME"]
+
+            df["REPORT_MONTH"] = report_month
+            df["REPORT_YEAR"] = report_year
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
-            #Sometimes the API returns duplicate data with the only difference being LIAMOUNT
-            #One row has a value and one row has 0
-            #This takes the max value and prevents duplicates
-            df = df.sort_values(['COMPANY', 'LIDESCRIPTION', 'REPORT_MONTH', 'REPORT_YEAR', 'LIAMOUNT'], ascending=False)
-            df = df.groupby(['COMPANY', 'LIDESCRIPTION', 'REPORT_MONTH', 'REPORT_YEAR']).first().reset_index()
+            # Sometimes the API returns duplicate data with the only difference being LIAMOUNT
+            # One row has a value and one row has 0
+            # This takes the max value and prevents duplicates
+            df = df.sort_values(
+                ["COMPANY", "LIDESCRIPTION", "REPORT_MONTH", "REPORT_YEAR", "LIAMOUNT"],
+                ascending=False,
+            )
+            df = (
+                df.groupby(["COMPANY", "LIDESCRIPTION", "REPORT_MONTH", "REPORT_YEAR"])
+                .first()
+                .reset_index()
+            )
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=raw_db_name,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -331,9 +394,9 @@ def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, 
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {raw_db_name}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {raw_db_name}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.COMPANY = target.COMPANY
                             and source.LIDESCRIPTION = target.LIDESCRIPTION
@@ -401,8 +464,11 @@ def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, 
     else:
         logger.info(report_response.text)
 
+
 @task
-def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_invoice_aggregate_demographic_data(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of invoice aggregate demographic data from the Check Commerce API
     :return: None
@@ -418,23 +484,28 @@ def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN:
         "ReportPermDesc": "InvoiceAggregateDemographicData",
         "Parameter_MID": MERCHANT_NUMBER,
         "Parameter_Year": report_year,
-        "Parameter_Month": report_month
+        "Parameter_Month": report_month,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
+    df: DataFrame = DataFrame()
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
     if not df.empty:
-        df['REPORT_MONTH'] = report_month
-        df['REPORT_YEAR'] = report_year
-        df['CREATED_AT'] = now("UTC")
+        from above.common.constants import get_db_config
+
+        raw_db_name = get_db_config()["RAW_DATABASE_NAME"]
+
+        df["REPORT_MONTH"] = report_month
+        df["REPORT_YEAR"] = report_year
+        df["CREATED_AT"] = now("UTC")
         df.columns = df.columns.str.upper()
         suffix: str = "_UPDATES"
         dataframe_to_snowflake(
             df,
-            database_name=RAW_DATABASE_NAME,
+            database_name=raw_db_name,
             schema_name=RAW_SCHEMA_NAME,
             table_name=f"{RAW_TABLE_NAME}{suffix}",
             overwrite=True,
@@ -442,9 +513,9 @@ def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN:
         )
         merge_query: str = dedent(
             f"""
-            merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+            merge into {raw_db_name}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                 as target
-            using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+            using {raw_db_name}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                 as source
                     on source.MID = target.MID
                         and source.REPORT_MONTH = target.REPORT_MONTH
@@ -585,17 +656,20 @@ def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN:
             logger.error(f"Other error: {e}")
             raise AirflowFailException()
     else:
-        logger.info(report_response.text)            
+        logger.info(report_response.text)
+
 
 @task
-def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_aggregator_merchant_invoice(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of aggregate merchant invoices from the Check Commerce API
     :return: None
     """
 
-    #The current month returns no data
-    #This ensures we get the last month's data
+    # The current month returns no data
+    # This ensures we get the last month's data
     report_month = (date.today() + timedelta(-30)).strftime("%m")
     report_year = (date.today() + timedelta(-30)).strftime("%Y")
 
@@ -606,29 +680,48 @@ def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, R
         "ReportPermDesc": "AggregatorMerchantInvoice",
         "Parameter_AggregatorMid": MERCHANT_NUMBER,
         "Parameter_Month": report_month,
-        "Parameter_Year": report_year
+        "Parameter_Year": report_year,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df.columns = df.columns.str.replace(' ', '_') 
-            df['REPORT_MONTH'] = report_month
-            df['REPORT_YEAR'] = report_year
-            df['CREATED_AT'] = now("UTC")
+            from above.common.constants import get_db_config
+
+            raw_db_name = get_db_config()["RAW_DATABASE_NAME"]
+
+            df.columns = df.columns.str.replace(" ", "_")
+            df["REPORT_MONTH"] = report_month
+            df["REPORT_YEAR"] = report_year
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
-            #Sometimes the API returns duplicate data with the only difference being AMOUNT_PROCESSED
-            #One row has a value and one row has 0
-            #This takes the max value and prevents duplicates
-            df = df.sort_values(['MERCHANT_NUMBER', 'INVOICE_START', 'INVOICE_END', 'DESCRIPTION', 'AMOUNT_PROCESSED'], ascending=False)
-            df = df.groupby(['MERCHANT_NUMBER', 'INVOICE_START', 'INVOICE_END', 'DESCRIPTION']).first().reset_index()
+            # Sometimes the API returns duplicate data with the only difference being AMOUNT_PROCESSED
+            # One row has a value and one row has 0
+            # This takes the max value and prevents duplicates
+            df = df.sort_values(
+                [
+                    "MERCHANT_NUMBER",
+                    "INVOICE_START",
+                    "INVOICE_END",
+                    "DESCRIPTION",
+                    "AMOUNT_PROCESSED",
+                ],
+                ascending=False,
+            )
+            df = (
+                df.groupby(
+                    ["MERCHANT_NUMBER", "INVOICE_START", "INVOICE_END", "DESCRIPTION"]
+                )
+                .first()
+                .reset_index()
+            )
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=raw_db_name,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -636,9 +729,9 @@ def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, R
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {raw_db_name}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {raw_db_name}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.MERCHANT_NUMBER = target.MERCHANT_NUMBER
                             and source.INVOICE_START = target.INVOICE_START
@@ -697,10 +790,13 @@ def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, R
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)                
+        logger.info(report_response.text)
+
 
 @task
-def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_transaction_log(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of transaction data from the Check Commerce API
     :return: None
@@ -719,23 +815,23 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
         "ReportPermDesc": "TransactionLog",
         "Parameter_CoNo": MERCHANT_NUMBER,
         "Parameter_DateProcessStart": start_date_string,
-        "Parameter_DateProcessEnd": end_date_string
+        "Parameter_DateProcessEnd": end_date_string,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
-            df['CREATED_AT'] = now("UTC")
+            df["START_DATE"] = start_date_string
+            df["END_DATE"] = end_date_string
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=_get_raw_database_name(),
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -743,9 +839,9 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.ID = target.ID
                             and source.START_DATE = target.START_DATE
@@ -912,10 +1008,13 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)                
+        logger.info(report_response.text)
+
 
 @task
-def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_returned_transactions(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of returned transactions from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -934,23 +1033,23 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
         "ReportPermDesc": "TransactionLog",
         "Parameter_CoNo": MERCHANT_NUMBER,
         "Parameter_ReturnDateStart": start_date_string,
-        "Parameter_ReturnDateEnd": end_date_string
+        "Parameter_ReturnDateEnd": end_date_string,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
-            df['CREATED_AT'] = now("UTC")
+            df["START_DATE"] = start_date_string
+            df["END_DATE"] = end_date_string
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=_get_raw_database_name(),
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -958,9 +1057,9 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.ID = target.ID
                             and source.START_DATE = target.START_DATE
@@ -1129,8 +1228,11 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
     else:
         logger.info(report_response.text)
 
+
 @task
-def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_effective_entry_date_transactions(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of transactions  using effective entry date from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -1149,23 +1251,23 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
         "ReportPermDesc": "TransactionLog",
         "Parameter_CoNo": MERCHANT_NUMBER,
         "Parameter_EEDStart": start_date_string,
-        "Parameter_EEDEnd": end_date_string
+        "Parameter_EEDEnd": end_date_string,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
-            df['CREATED_AT'] = now("UTC")
+            df["START_DATE"] = start_date_string
+            df["END_DATE"] = end_date_string
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=_get_raw_database_name(),
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -1173,9 +1275,9 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.ID = target.ID
                             and source.START_DATE = target.START_DATE
@@ -1344,8 +1446,11 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
     else:
         logger.info(report_response.text)
 
+
 @task
-def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_remittance_information(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of remittance information from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -1364,23 +1469,23 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
         "ReportPermDesc": "RemittanceInformation",
         "Parameter_MID": MERCHANT_NUMBER,
         "Parameter_StartDate": start_date_string,
-        "Parameter_EndDate": end_date_string    
+        "Parameter_EndDate": end_date_string,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
-            df['CREATED_AT'] = now("UTC")
+            df["START_DATE"] = start_date_string
+            df["END_DATE"] = end_date_string
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=_get_raw_database_name(),
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -1388,9 +1493,9 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.REMITTANCEPK = target.REMITTANCEPK
                             and source.START_DATE = target.START_DATE
@@ -1541,8 +1646,11 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
     else:
         logger.info(report_response.text)
 
+
 @task
-def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_disbursement_information(
+    MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str
+) -> None:
     """
     Fetches a dataframe of disbursment information from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -1561,23 +1669,23 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
         "ReportPermDesc": "DisbursementInformation",
         "Parameter_AggregatorMID": MERCHANT_NUMBER,
         "Parameter_StartDate": start_date_string,
-        "Parameter_EndDate": end_date_string
+        "Parameter_EndDate": end_date_string,
     }
 
     report_response = make_api_request(REPORT_URL, report_params)
-        
+
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
-            df['CREATED_AT'] = now("UTC")
+            df["START_DATE"] = start_date_string
+            df["END_DATE"] = end_date_string
+            df["CREATED_AT"] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=_get_raw_database_name(),
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
@@ -1585,9 +1693,9 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {_get_raw_database_name()}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.DISBURSEMENTPK = target.DISBURSEMENTPK
                             and source.START_DATE = target.START_DATE
@@ -1718,7 +1826,8 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)        
+        logger.info(report_response.text)
+
 
 @dag(
     dag_id=this_filename,
@@ -1739,12 +1848,50 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
     ),
 )
 def checkcommerce_api_extract():
-    get_and_load_merchant_list(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'MERCHANT_LIST') >> get_and_load_merchant_information(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'MERCHANT_INFORMATION')
-    get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'INVOICE_AGGREGATE_LINE_ITEMS')
-    get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'INVOICE_AGGREGATE_DEMOGRAPHIC_DATA')
-    get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'AGGREGATOR_MERCHANT_INVOICE')
-    get_and_load_transaction_log(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'TRANSACTION_LOG') >> get_and_load_returned_transactions(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'TRANSACTION_LOG_RETURNS') >> get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE')
-    get_and_load_remittance_information(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'REMITTANCE_INFORMATION')
-    get_and_load_disbursement_information(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'DISBURSEMENT_INFORMATION')
+    # Initialize connections at runtime
+    _init_snowflake_connection()
+
+    # Get credentials at runtime
+    creds = _get_checkcommerce_credentials()
+    merchant_number = creds.get("merchant_number")
+    if not merchant_number:
+        logger.error("Check Commerce merchant number not found in Airflow Variables")
+        raise AirflowFailException()
+
+    report_url = _get_report_url()
+    token = get_token()
+
+    get_and_load_merchant_list(
+        merchant_number, token, report_url, "MERCHANT_LIST"
+    ) >> get_and_load_merchant_information(
+        merchant_number, token, report_url, "MERCHANT_INFORMATION"
+    )
+    get_and_load_invoice_aggregate_line_items(
+        merchant_number, token, report_url, "INVOICE_AGGREGATE_LINE_ITEMS"
+    )
+    get_and_load_invoice_aggregate_demographic_data(
+        merchant_number, token, report_url, "INVOICE_AGGREGATE_DEMOGRAPHIC_DATA"
+    )
+    get_and_load_aggregator_merchant_invoice(
+        merchant_number, token, report_url, "AGGREGATOR_MERCHANT_INVOICE"
+    )
+    (
+        get_and_load_transaction_log(
+            merchant_number, token, report_url, "TRANSACTION_LOG"
+        )
+        >> get_and_load_returned_transactions(
+            merchant_number, token, report_url, "TRANSACTION_LOG_RETURNS"
+        )
+        >> get_and_load_effective_entry_date_transactions(
+            merchant_number, token, report_url, "TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE"
+        )
+    )
+    get_and_load_remittance_information(
+        merchant_number, token, report_url, "REMITTANCE_INFORMATION"
+    )
+    get_and_load_disbursement_information(
+        merchant_number, token, report_url, "DISBURSEMENT_INFORMATION"
+    )
+
 
 checkcommerce_api_extract()

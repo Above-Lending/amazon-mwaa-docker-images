@@ -16,11 +16,16 @@ from pendulum import datetime, now, duration
 from sqlalchemy.engine import Engine
 from typing_extensions import LiteralString
 
-from above.common.constants import SNOWFLAKE_CONN_ID
 from above.common.slack_alert import task_failure_slack_alert
 from talkdesk.common.talkdesk import get_talkdesk_api_auth_token
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+
+def _get_snowflake_conn_id() -> str:
+    """Get Snowflake connection ID (lazy loaded)."""
+    from above.common.constants import get_snowflake_conn_id
+    return get_snowflake_conn_id()
 this_modules_name: str = str(os.path.basename(__file__).replace(".py", ""))
 start_date: datetime = datetime(2024, 6, 1, tz="UTC")
 
@@ -32,7 +37,7 @@ def query_to_dataframe(query: str) -> DataFrame:
     :return: result
     """
     logger.info(f"Executing query:\n{query}")
-    snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+    snowflake_hook: SnowflakeHook = SnowflakeHook(_get_snowflake_conn_id())
     sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
     dataframe: DataFrame = pd.read_sql(query, sql_engine)
     return dataframe

@@ -12,13 +12,24 @@ from pandas import DataFrame
 from snowflake.connector import SnowflakeConnection
 from sqlalchemy.engine import Engine
 from snowflake.connector.pandas_tools import write_pandas
-from above.common.constants import SNOWFLAKE_CONN_ID
 from airflow.exceptions import AirflowFailException
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+def _get_snowflake_conn_id() -> str:
+    """Get Snowflake connection ID (lazy loaded)."""
+    from above.common.constants import get_snowflake_conn_id
+
+    return get_snowflake_conn_id()
+
+
 def get_file_format_function(file_format: str) -> Callable:
+    """
+    Returns a function that saves a DataFrame in the specified file format.
+    :param file_format: The file format (csv, txt)
+    :return: Function that saves a DataFrame in the specified file format
+    """
 
     def save_csv(dataframe: pd.DataFrame, temp_file: str) -> None:
         logger.info(f"Saving CSV file as {temp_file}...")
@@ -29,15 +40,15 @@ def get_file_format_function(file_format: str) -> Callable:
         logger.info(f"Saving text file as {temp_file}...")
         np.savetxt(temp_file, numpy_array, fmt="%s", delimiter="")
 
-    file_format: str = file_format.lower()
+    file_format_lower: str = file_format.lower()
     file_format_functions: dict[str, Callable[..., None]] = dict(
         csv=save_csv, txt=save_txt
     )
-    if file_format not in file_format_functions.keys():
+    if file_format_lower not in file_format_functions.keys():
         raise AirflowException(
             f"Allowable file formats: {', '.join(file_format_functions.keys())}"
         )
-    return file_format_functions[file_format]
+    return file_format_functions[file_format_lower]
 
 
 def dataframe_to_s3(
@@ -47,6 +58,10 @@ def dataframe_to_s3(
     s3_conn_id: str | None,
     s3_key: str,
 ) -> None:
+    """
+    Saves a DataFrame to S3 in the specified file format.
+    """
+
     file_format_function: Callable[..., Any] = get_file_format_function(file_format)
     file_path: str = f"{tempfile.NamedTemporaryFile().name}.{file_format}"
     file_format_function(df, file_path)
@@ -55,6 +70,7 @@ def dataframe_to_s3(
     s3_hook.load_file(
         filename=file_path, key=s3_key, bucket_name=s3_bucket, replace=True
     )
+
 
 def snowflake_query_to_pandas_dataframe(query: str, **context) -> DataFrame:
     """Queries the associated conn_id and returns the results in a pandas dataframe.
@@ -67,9 +83,9 @@ def snowflake_query_to_pandas_dataframe(query: str, **context) -> DataFrame:
     """
     try:
         logger.info(f"Executing query:\n{query}")
-        snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook: SnowflakeHook = SnowflakeHook(_get_snowflake_conn_id())
         df = snowflake_hook.get_pandas_df(sql=query)
-        
+
         print(f"Retrieved {len(df)} rows from Snowflake")
         print(f"Columns: {df.columns.tolist()}")
         print(f"\nFirst few rows:\n{df.head()}")
@@ -80,11 +96,11 @@ def snowflake_query_to_pandas_dataframe(query: str, **context) -> DataFrame:
     except Exception as e:
         logger.error(f"Other error: {e}")
         raise AirflowFailException()
-    
+
     return df
 
 
-# NOTE: `query_to_dataframe` fairly old and it is a bit brittle at this point (2025Q3). 
+# NOTE: `query_to_dataframe` fairly old and it is a bit brittle at this point (2025Q3).
 # We should replace this with the above `snowflake_query_to_pandas_dataframe fn.`
 def query_to_dataframe(query: str, fail_on_empty_result: bool = False) -> DataFrame:
     """
@@ -96,7 +112,7 @@ def query_to_dataframe(query: str, fail_on_empty_result: bool = False) -> DataFr
     """
     logger.info("Executing query:")
     logger.info(query)
-    snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+    snowflake_hook: SnowflakeHook = SnowflakeHook(_get_snowflake_conn_id())
     sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
     dataframe: DataFrame = pd.read_sql(query, sql_engine)
 
@@ -131,7 +147,7 @@ def dataframe_to_snowflake(
     :return: success flag, number of rows written
     """
     if snowflake_connection is None:
-        snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook: SnowflakeHook = SnowflakeHook(_get_snowflake_conn_id())
         snowflake_connection = snowflake_hook.get_conn()
 
     success, number_of_chunks, number_of_rows, _ = write_pandas(
@@ -162,6 +178,9 @@ def query_to_s3(
     file_format: str,
     fail_on_empty_result: bool = False,
 ) -> bool:
+    """
+    Executes a Snowflake query and saves the result to S3 in the specified file format.
+    """
     get_file_format_function(file_format)
 
     logger.info("Executing query:")

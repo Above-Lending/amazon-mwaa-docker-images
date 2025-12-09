@@ -21,25 +21,10 @@ from twilio.rest.lookups.v2.phone_number import PhoneNumberInstance
 from snowflake.connector import SnowflakeConnection
 from sqlalchemy.engine import Engine
 
-from above.common.constants import (
-    RAW_DATABASE_NAME,
-    SNOWFLAKE_CONN_ID,
-    TRUSTED_DATABASE_NAME,
-    ENVIRONMENT_FLAG,
-    S3_DATALAKE_BUCKET,
-)
 from above.common.snowflake_utils import dataframe_to_snowflake, query_to_dataframe
 from above.common.s3_utils import upload_string_to_s3, upload_file_to_s3
 
 logger = logging.getLogger(__name__)
-
-S3_LOG_DIRECTORY_SUFFIX: str = (
-    "results/prod/twilio_lookup_logs/"
-    if ENVIRONMENT_FLAG == "prod"
-    else "results/dev/twilio_lookup_logs/"
-)
-S3_LOG_DIRECTORY: str = os.path.join(S3_DATALAKE_BUCKET, S3_LOG_DIRECTORY_SUFFIX)
-
 
 # Default constants
 DEFAULT_TWILIO_FIELDS = ["caller_name", "line_type_intelligence"]
@@ -47,17 +32,53 @@ DEFAULT_LOOKUP_REFRESH_MONTHS = 12
 DEFAULT_API_DELAY_SECONDS = 0.05
 DEFAULT_MAX_FAILED_TO_LOG = 10
 
-LOOKUP_LIMIT: int = 5000 if ENVIRONMENT_FLAG == "prod" else 2  # Prevent costly runaways
-twilio_fields: List = ["caller_name", "line_type_intelligence"]
-twilio_credentials: Dict = json.loads(Variable.get("twilio"))
-twilio_client: Client = Client(
-    twilio_credentials.get("TWILIO_ACCOUNT_SID"),
-    twilio_credentials.get("TWILIO_AUTH_TOKEN"),
-)
 RAW_SCHEMA_NAME: str = "TWILIO"
 RAW_TABLE_NAME: str = "REVERSE_NUMBER_LOOKUPS"
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-snowflake_hook.database = RAW_DATABASE_NAME
+
+# Lazy-loaded globals
+twilio_client: Client = None
+snowflake_hook: SnowflakeHook = None
+
+
+def _get_environment_flag() -> str:
+    """Get environment flag (lazy loaded)."""
+    return os.getenv("ENVIRONMENT_FLAG", "staging")
+
+
+def _get_s3_log_directory() -> str:
+    """Get S3 log directory based on environment (lazy loaded)."""
+    from above.common.constants import get_s3_datalake_bucket
+    env_flag = _get_environment_flag()
+    suffix = "results/prod/twilio_lookup_logs/" if env_flag == "prod" else "results/dev/twilio_lookup_logs/"
+    return os.path.join(get_s3_datalake_bucket(), suffix)
+
+
+def _get_lookup_limit() -> int:
+    """Get lookup limit based on environment (lazy loaded)."""
+    env_flag = _get_environment_flag()
+    return 5000 if env_flag == "prod" else 2
+
+
+def _init_twilio_client() -> Client:
+    """Initialize Twilio client (lazy loaded)."""
+    global twilio_client
+    if twilio_client is None:
+        twilio_credentials: Dict = json.loads(Variable.get("twilio"))
+        twilio_client = Client(
+            twilio_credentials.get("TWILIO_ACCOUNT_SID"),
+            twilio_credentials.get("TWILIO_AUTH_TOKEN"),
+        )
+    return twilio_client
+
+
+def _init_snowflake_hook() -> SnowflakeHook:
+    """Initialize Snowflake hook (lazy loaded)."""
+    global snowflake_hook
+    if snowflake_hook is None:
+        from above.common.constants import get_snowflake_conn_id, get_db_config
+        snowflake_hook = SnowflakeHook(get_snowflake_conn_id())
+        snowflake_hook.database = get_db_config()["RAW_DATABASE_NAME"]
+    return snowflake_hook
 snowflake_hook.schema = RAW_SCHEMA_NAME
 sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
 snowflake_connection: SnowflakeConnection = snowflake_hook.get_conn()
