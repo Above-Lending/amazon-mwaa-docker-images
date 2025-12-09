@@ -1,0 +1,58 @@
+# name: CI
+
+# on:
+#   push:
+#     branches: [main, develop]
+#   pull_request:
+#     branches: [main, develop]
+
+# jobs:
+#   lint-and-test:
+#     name: Lint and Test
+#     runs-on: ubuntu-latest
+    
+#     steps:
+#       - name: Check out code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Python 3.11
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
+#           cache: 'pip'
+
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+
+#       - name: Create virtual environments
+#         run: python create_venvs.py --target production
+
+#       - name: Run Python linting (ruff + pyright)
+#         run: ./quality-checks/lint_python.sh
+
+#       - name: Run unit tests
+#         run: ./quality-checks/unit_tests.sh
+
+#   docker-build:
+#     name: Docker Build Test
+#     runs-on: ubuntu-latest
+#     strategy:
+#       matrix:
+#         version: ['3.0.6']
+    
+#     steps:
+#       - name: Check out code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+
+#       - name: Build Docker image for Airflow ${{ matrix.version }}
+#         working-directory: images/airflow/${{ matrix.version }}
+#         run: |
+#           chmod +x build.sh
+#           ./build.sh docker
+#         env:
+#           DOCKER_BUILDKIT: 1
