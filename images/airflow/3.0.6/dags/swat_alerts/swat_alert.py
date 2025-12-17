@@ -13,6 +13,8 @@ from airflow import DAG
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.models import DagModel
+from airflow.utils.session import create_session
 from airflow.models import Variable
 from pandas import DataFrame
 from pendulum import datetime, now
@@ -52,7 +54,8 @@ CHANNELS = {
     "logs-credit-model-variables":   "C08PJCYKWN9",
     "logs-data-bi":                  "C09C9EQ0KN0",
     "logs-leads-eligibility":        "C0502AW8UJK",
-    "logs-payments":                 "C04SA0HMDR7"
+    "logs-payments":                 "C04SA0HMDR7",
+    "logs-servicing":                "C0A358R95DF"
 }
 
 slack_client = WebClient(token=SLACK_TOKEN, timeout=DEFAULT_TIMEOUT)
@@ -331,7 +334,7 @@ def create_dynamic_dag(observation: Dict) -> DAG:
 
         @dag(
             dag_id=f"swat__{bundle_name}",
-            schedule=cron_schedule,
+            schedule_interval=cron_schedule,
             start_date=datetime(2025, 3, 20),
             catchup=False,
         )

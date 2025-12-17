@@ -1,6 +1,6 @@
 payments_process:
   - name: PAYMENT_CURRENT_DATE
-    cron_schedule: "13 8,14 * * 1-5"
+    cron_schedule: "30 11-14 * * 1-5"
     enabled: true
     job:
       - view_name: PAYMENT_CURRENT_DATE

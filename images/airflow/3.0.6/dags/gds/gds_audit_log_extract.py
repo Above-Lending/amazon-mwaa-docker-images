@@ -11,15 +11,17 @@ from pandas import DataFrame
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.exceptions import AirflowFailException
+from airflow.utils.trigger_rule import TriggerRule
 from pendulum import datetime, duration, now
 
 from above.common.constants import (
+    ENVIRONMENT_FLAG,
     S3_CONN_ID,
     S3_DATAENGINEERING_BUCKET,
 )
 from above.common.check_memory_usage import check_memory_usage
 from above.common.s3_utils import gzip_json_and_upload_to_s3
-from above.common.slack_alert import task_failure_slack_alert
+from above.common.slack_alert import task_failure_slack_alert_hook
 from above.common.snowflake_utils import snowflake_query_to_pandas_dataframe
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -34,6 +36,8 @@ CASECENTER_HISTORY_API_URL = "https://casecenter-above-lending-prod.dataview360.
 DAYS_SINCE_APPLICATION_CREATION = 1600
 API_BATCH_SIZE = 500  # Adjust based on memory and API limits
 SLEEP_TIMEOUT = 0.01  # To avoid hitting API rate limits or API exhaustion.
+
+DEV_TESTING_COUNT = 200  # Number of records to process in non-prod envs for testing.
 
 
 @task
@@ -52,6 +56,12 @@ def load_and_batch_application_data(
 
         # Check row count for this df in the context.
         context["ti"].xcom_push(key=f"row_count_{now().isoformat()}", value=len(df))
+
+        if ENVIRONMENT_FLAG != "prod":
+            df = df.head(DEV_TESTING_COUNT)
+            logger.info(
+                "Non-prod environment detected; limiting to 10 records for testing."
+            )
 
         if not df.empty:
             logger.info(f"{len(df)} applications audit_logs to load.")
@@ -79,14 +89,38 @@ def load_and_batch_application_data(
 
 
 @task
-def process_batch_of_application_data(batch: list[str]) -> None:
+def process_batch_of_application_data(batch: list[str]) -> list[str]:
     """Hit API endpoint for each record in the batch."""
+    success_count = 0
+    failure_count = 0
+    failed_request_ids = []
+
     for idx, request_id in enumerate(batch):
         logger.info("On record %s of %s in this batch.", idx + 1, len(batch))
-        get_application_audit_log(request_id)
+        success = get_application_audit_log(request_id)
+        if success:
+            success_count += 1
+        else:
+            failure_count += 1
+            failed_request_ids.append(request_id)
+
+    logger.info(
+        f"Batch complete: {success_count} succeeded, {failure_count} failed out of {len(batch)} total."
+    )
+
+    # Only fail the task if ALL items in the batch failed
+    if failure_count == len(batch):
+        logger.error("All items in batch failed. Failing task.")
+        raise AirflowFailException("All items in batch failed.")
+    elif failure_count > 0:
+        logger.warning(
+            f"Batch completed with {failure_count} failures, but continuing."
+        )
+
+    return failed_request_ids
 
 
-def get_application_audit_log(request_id: str) -> None:
+def get_application_audit_log(request_id: str) -> bool:
     """
     POST to CaseCenter's history API to get audit log of `request_id`.
 
@@ -96,7 +130,7 @@ def get_application_audit_log(request_id: str) -> None:
         request_id (str): The request_id of the desired audit_log
 
     Returns:
-        json: The returned JSON Audit Log from the API call.
+        bool: True if successful, False if failed.
     """
 
     check_memory_usage(tag=f"GET AUDIT LOG FOR {request_id}")
@@ -119,10 +153,39 @@ def get_application_audit_log(request_id: str) -> None:
         )
 
         del audit_log_json
+        return True
 
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"HTTP error for request_id {request_id}: {e}")
+        return False
     except Exception as e:
-        logger.error(f"Other error: {e}")
-        raise AirflowFailException()
+        logger.error(f"Error processing request_id {request_id}: {e}")
+        return False
+
+
+@task(trigger_rule=TriggerRule.ALL_DONE)
+def report_failed_request_ids(failed_request_ids_batches: list[list[str]]) -> None:
+    """Print all failed request_ids from all batches."""
+    # Handle None or empty input from failed upstream tasks
+    if not failed_request_ids_batches:
+        logger.warning(
+            "No batch results available. All upstream tasks may have failed."
+        )
+        return
+
+    # Flatten the list of lists into a single list, filtering out None values
+    all_failed_request_ids = [
+        request_id
+        for batch in failed_request_ids_batches
+        if batch is not None
+        for request_id in batch
+    ]
+
+    if all_failed_request_ids:
+        logger.error(f"Total failed request_ids: {len(all_failed_request_ids)}")
+        logger.error(f"Failed request_ids: {all_failed_request_ids}")
+    else:
+        logger.info("No failed request_ids. All requests processed successfully.")
 
 
 @dag(
@@ -141,14 +204,15 @@ def get_application_audit_log(request_id: str) -> None:
         retries=3,
         retry_delay=duration(minutes=5),
         execution_timeout=duration(minutes=420),
-        on_failure_callback=task_failure_slack_alert,
+        on_failure_callback=task_failure_slack_alert_hook,
     ),
 )
 def gds_audit_log_extract(**context):
     batches = load_and_batch_application_data(
         days_since_application_creation=DAYS_SINCE_APPLICATION_CREATION
     )
-    process_batch_of_application_data.expand(batch=batches)
+    failed_ids = process_batch_of_application_data.expand(batch=batches)
+    report_failed_request_ids(failed_ids)
 
 
 gds_audit_log_extract()

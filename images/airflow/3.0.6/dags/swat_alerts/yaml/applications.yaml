@@ -1,12 +1,25 @@
 applications:
   - name: STUCK_IN_INITIAL_TIL_SUBMIT
-    cron_schedule: "12 * * * 1-5"
+    cron_schedule: "0 8-17 * * 1-5"
     enabled: true
     job:
-      - view_name: STUCK_IN_INITIAL_TIL_SUBMIT
+      # Criteria view
+      - view_name: CRITERIA_STUCK_IN_INITIAL_TIL_SUBMIT
+        channel: mute
+        title: "CRITERIA_STUCK_IN_INITIAL_TIL_SUBMIT"
+        send_on_zero_results: true
+
+      # Alert view (only alerts loans not yet alerted today)
+      - view_name: ALERT_STUCK_IN_INITIAL_TIL_SUBMIT
         channel: alerts-apps-prod
         title: Loans stuck in INITIAL_TIL_SUBMIT status
         send_on_zero_results: false
+
+      # Log view
+      - view_name: LOG_STUCK_IN_INITIAL_TIL_SUBMIT
+        channel: logs-apps-prod
+        title: "LOG_STUCK_IN_INITIAL_TIL_SUBMIT"
+        send_on_zero_results: true
 
   - name: MISSING_REQUEST_ID
     cron_schedule: "13 7-18 * * 1-5"
@@ -35,3 +48,21 @@ applications:
         title: Loan Records Missing Borrower Additional Info Records
         send_on_zero_results: false
 
+  - name: WEB_FLOW_VOLUME
+    cron_schedule: "0,15,30,45 * * * *"
+    enabled: true
+    job:
+      - view_name: CRITERIA_WEB_FLOW_VOLUME
+        channel: mute
+        title: "Web Flow Volume Update"
+        send_on_zero_results: true
+      # Per initial queries, these only fire weekdays 6:00am-6:00pm, every 2 hours
+      - view_name: ALERT_WEB_FLOW_VOLUME
+        channel: alerts-data-bi
+        title: "Web Flow Volume Dramatically Lower Week over Week"
+        send_on_zero_results: false
+      # send_on_zero_results is false because the query limits when it returns values
+      - view_name: LOG_WEB_FLOW_VOLUME
+        channel: logs-data-bi
+        title: "Web Flow Volume Update"
+        send_on_zero_results: false
