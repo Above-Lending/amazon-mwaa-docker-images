@@ -35,7 +35,7 @@ def load_raw_from_s3(
         snowflake_conn_id,
         query_params,
         default_args,
-        config_file_dir,
+        config_file_dir: str,
         sql_template_searchpath,
         schedule=None,
         catchup=False,
@@ -62,7 +62,7 @@ def load_raw_from_s3(
     )
 
     with dag:
-        init = SnowflakeSqlApiOperator(
+        init: SnowflakeSqlApiOperator = SnowflakeSqlApiOperator(
             task_id='init',
             snowflake_conn_id=snowflake_conn_id,
             sql='init_json.sql',

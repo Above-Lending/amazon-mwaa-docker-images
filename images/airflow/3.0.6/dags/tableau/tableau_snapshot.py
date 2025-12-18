@@ -15,7 +15,7 @@ from above.common.constants import (
     TABLEAU_SERVER_URL,
     TABLEAU_SITE_ID,
 )
-from above.common.slack_alert import task_failure_slack_alert
+from above.common.slack_alert import task_failure_slack_alert_hook
 
 logger: logging.Logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -42,7 +42,7 @@ TOKEN_SECRET: str = tableau_env["TOKEN_SECRET"]
         retries=0,  # Manually retry only after manual re-rerun
         retry_delay=duration(minutes=10),
         execution_timeout=duration(minutes=120),
-        on_failure_callback=task_failure_slack_alert,
+        on_failure_callback=task_failure_slack_alert_hook,
     ),
 )
 def run() -> None:

@@ -27,13 +27,23 @@ dash:
         send_on_zero_results: false
 
   - name: PAYMENTS_R04_RETURN_CODE
-    cron_schedule: "0 10 * * 1-5"
+    cron_schedule: "0 10-16 * * 1-5"  
     enabled: true
     job:
-      - view_name: PAYMENTS_R04_RETURN_CODE
+      - view_name: CRITERIA_PAYMENTS_R04_RETURN_CODE
+        channel: mute
+        title: "CRITERIA_PAYMENTS_R04_RETURN_CODE"
+        send_on_zero_results: true
+
+      - view_name: ALERT_PAYMENTS_R04_RETURN_CODE
         channel: alerts-servicing
-        title: Loans with R04 Return Code in the last Day
+        title: Loans with R04 Return Code detected
         send_on_zero_results: false
+
+      - view_name: LOG_PAYMENTS_R04_RETURN_CODE
+        channel: logs-servicing
+        title: "LOG_PAYMENTS_R04_RETURN_CODE"
+        send_on_zero_results: true
 
   - name: ALLOCATIONS_NOT_APPROVED
     cron_schedule: "40 13 * * 1-5"
@@ -42,5 +52,46 @@ dash:
       - view_name: ALLOCATIONS_NOT_APPROVED
         channel: alerts-allocation
         title: "Allocations have not yet been approved before cutoff at 2PM CT - loans will not be funded without allocation!"
+        send_on_zero_results: false
+
+  - name: LOAN_EXCLUSION_NOT_SYNCED
+    cron_schedule: "00 13 * * 1-5"
+    enabled: true
+    job:
+      - view_name: CRITERIA_LOAN_EXCLUSION_NOT_SYNCED
+        channel: mute
+        title: "CRITERIA_LOAN_EXCLUSION_NOT_SYNCED"
+        send_on_zero_results: true
+
+      - view_name: ALERT_LOAN_EXCLUSION_NOT_SYNCED
+        channel: alerts-apps-prod
+        title: "Alert: Loan Exclusion Not Synced -  Loan will be allocated and funded"
+        send_on_zero_results: false
+
+      - view_name: LOG_LOAN_EXCLUSION_NOT_SYNCED
+        channel: logs-apps-prod
+        title: "LOG_LOAN_EXCLUSION_NOT_SYNCED"
+        send_on_zero_results: true
+
+  - name: UID_39832624_CIP_AUTOPAY
+    cron_schedule: "0 9 * * 1-5"   # 9 AM CST, Monday to Friday
+    enabled: true
+    job:
+      - view_name: CRITERIA_UID_39832624_CIP_AUTOPAY
+        channel: mute
+        title: "CRITERIA_UID_39832624_CIP_AUTOPAY"
+        send_on_zero_results: true
+
+      - view_name: ALERT_UID_39832624_CIP_AUTOPAY
+        channel: alerts-special-handling
+        title: "Customer Initiated Payment requires Principal Only update"
+        send_on_zero_results: false
+        message: >
+          UID 39832624 scheduled a payment that must be updated to be
+          “Principal Only” type.
+
+      - view_name: LOG_UID_39832624_CIP_AUTOPAY
+        channel: logs-apps-prod
+        title: "LOG_UID_39832624_CIP_AUTOPAY"
         send_on_zero_results: false
 

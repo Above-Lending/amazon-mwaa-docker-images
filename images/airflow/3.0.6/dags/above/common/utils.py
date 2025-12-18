@@ -13,6 +13,7 @@ from mypy_boto3_s3.service_resource import Bucket
 
 logger = logging.getLogger(__name__)
 
+# DEPRECATED, ONLY USED FOR TALKDESK DAG.
 def put_df_to_s3_bucket(
     df: pd.DataFrame,
     s3_bucket: Bucket,
@@ -26,6 +27,8 @@ def put_df_to_s3_bucket(
     :param s3_key: S3 key ("path" in bucket)
     :param file_format: Defaults to 'json'; can be 'csv' or 'json'
     """
+    logger.warning("DEPRECATION WARNING: put_df_to_s3_bucket is deprecated.")
+
     logger.info(f"Started uploading {s3_key} to {s3_bucket.name} as {file_format}...")
 
     string_buffer: io.StringIO = io.StringIO()
@@ -49,7 +52,7 @@ def put_df_to_s3_bucket(
 
     logger.info(f"Finished uploading {s3_key} to {s3_bucket.name}.")
 
-
+# DEPRECATED, ONLY USED FOR TALKDESK DAG.
 def put_df_to_s3_bucket_name(
     df: pd.DataFrame,
     s3_conn_id: str | None,
@@ -68,26 +71,6 @@ def put_df_to_s3_bucket_name(
     s3_hook: S3Hook = S3Hook(s3_conn_id)
     bucket: Bucket = s3_hook.get_bucket(s3_bucket_name)  # noqa for type hints
     put_df_to_s3_bucket(df, bucket, s3_key, file_format)
-
-
-def get_ssh_key_file(ssh_key_name: str) -> None:
-    """
-    Gets SSH key from the secrets backend and saves it to a temp file.
-
-    If you need to use this local key file in a conn uri,
-    run this via PythonOperator prior to the operator that needs the key and
-    reference the keyfile using path name /tmp/<name_of_key_in_secret_manager>
-    :param ssh_key_name: Name of key in Secrets Manager
-    """
-
-    ssh_key: str = Variable.get(ssh_key_name)
-    ssh_key_file_name: str = "/tmp/{}".format(ssh_key_name)
-
-    with open(ssh_key_file_name, "w") as ssh_key_file:
-        ssh_key_file.write(ssh_key)
-
-    logger.info("Wrote {} to {}".format(ssh_key_name, ssh_key_file_name))
-
 
 # TODO: DEPRECATED, use `upload_file_to_s3` in s3_utils.py.
 def copy_file_to_s3(

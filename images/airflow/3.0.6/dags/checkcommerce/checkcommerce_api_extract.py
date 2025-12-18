@@ -18,7 +18,7 @@ from above.common.constants import (
     RAW_DATABASE_NAME,
     SNOWFLAKE_CONN_ID,
 )
-from above.common.slack_alert import task_failure_slack_alert
+from above.common.slack_alert import task_failure_slack_alert_hook
 from above.common.snowflake_utils import dataframe_to_snowflake
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -1735,7 +1735,7 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
         retries=0,  # Manually retry only after manual dbt re-rerun
         retry_delay=duration(minutes=10),
         execution_timeout=duration(minutes=60),
-        on_failure_callback=task_failure_slack_alert,
+        on_failure_callback=task_failure_slack_alert_hook,
     ),
 )
 def checkcommerce_api_extract():
