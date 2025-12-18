@@ -13,7 +13,7 @@ from airflow.models import Variable
 from pendulum import DateTime, duration
 
 from above.common.constants import ENVIRONMENT_FLAG
-from above.common.slack_alert import task_failure_slack_alert
+from above.common.slack_alert import task_failure_slack_alert_hook
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def get_tableau_dag_default_args(start_date: DateTime) -> dict[str, Any]:
         retries=0,  # Manually retry only after manual re-rerun
         retry_delay=duration(minutes=10),
         execution_timeout=duration(minutes=120),
-        on_failure_callback=task_failure_slack_alert
+        on_failure_callback=task_failure_slack_alert_hook
         if ENVIRONMENT_FLAG == "prod"
         else None,
     )

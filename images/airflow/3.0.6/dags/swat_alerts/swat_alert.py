@@ -334,7 +334,7 @@ def create_dynamic_dag(observation: Dict) -> DAG:
 
         @dag(
             dag_id=f"swat__{bundle_name}",
-            schedule_interval=cron_schedule,
+            schedule=cron_schedule,
             start_date=datetime(2025, 3, 20),
             catchup=False,
         )

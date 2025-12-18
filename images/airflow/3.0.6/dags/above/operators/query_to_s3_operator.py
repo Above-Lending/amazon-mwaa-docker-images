@@ -9,20 +9,20 @@ from airflow.exceptions import AirflowException
 from airflow.models import BaseOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from airflow.utils.decorators import apply_defaults
 
 
 class QueryToS3Operator(BaseOperator):
-
-    @apply_defaults
+    """
+    Executes a query in Snowflake and saves the result to S3 in the specified format.
+    """
     def __init__(
             self,
-            s3_conn_id,
-            s3_bucket,
-            s3_key,
-            snowflake_conn_id,
-            query,
-            file_format,
+            s3_conn_id: str,
+            s3_bucket: str,
+            s3_key: str,
+            snowflake_conn_id: str,
+            query: str,
+            file_format: str,
             index_value=None,
             *args,
             **kwargs
@@ -38,6 +38,7 @@ class QueryToS3Operator(BaseOperator):
         self.index_value = index_value
 
     def execute(self, context):
+        """Execute the operator."""
 
         sf_hook = SnowflakeHook(self.snowflake_conn_id)
         sf_sqlalchemy_engine = sf_hook.get_sqlalchemy_engine()

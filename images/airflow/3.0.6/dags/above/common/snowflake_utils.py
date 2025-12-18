@@ -18,7 +18,10 @@ from airflow.exceptions import AirflowFailException
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+# DEPRECATED.
 def get_file_format_function(file_format: str) -> Callable:
+
+    logger.warning(DeprecationWarning("This is deprecated. Do not use it on anything new."))
 
     def save_csv(dataframe: pd.DataFrame, temp_file: str) -> None:
         logger.info(f"Saving CSV file as {temp_file}...")
@@ -40,6 +43,7 @@ def get_file_format_function(file_format: str) -> Callable:
     return file_format_functions[file_format]
 
 
+# DEPRECATED
 def dataframe_to_s3(
     df: DataFrame,
     file_format: str,
@@ -47,6 +51,9 @@ def dataframe_to_s3(
     s3_conn_id: str | None,
     s3_key: str,
 ) -> None:
+    
+    logger.warning(DeprecationWarning("This is deprecated. Do not use it on anything new."))
+    
     file_format_function: Callable[..., Any] = get_file_format_function(file_format)
     file_path: str = f"{tempfile.NamedTemporaryFile().name}.{file_format}"
     file_format_function(df, file_path)
@@ -84,8 +91,7 @@ def snowflake_query_to_pandas_dataframe(query: str, **context) -> DataFrame:
     return df
 
 
-# NOTE: `query_to_dataframe` fairly old and it is a bit brittle at this point (2025Q3). 
-# We should replace this with the above `snowflake_query_to_pandas_dataframe fn.`
+# DEPRECATED
 def query_to_dataframe(query: str, fail_on_empty_result: bool = False) -> DataFrame:
     """
     Returns a DataFrame containing the result of the provided Snowflake query.
@@ -94,6 +100,9 @@ def query_to_dataframe(query: str, fail_on_empty_result: bool = False) -> DataFr
     exception if there are no rows in the result set. Defaults to False
     :return: DataFrame containing the result of the provided Snowflake query
     """
+
+    logger.warning(DeprecationWarning("This is deprecated. Do not use it on anything new.  Use `snowflake_query_to_pandas_dataframe` instead."))
+
     logger.info("Executing query:")
     logger.info(query)
     snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)

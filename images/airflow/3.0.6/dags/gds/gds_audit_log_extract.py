@@ -12,7 +12,7 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
-from pendulum import datetime, duration, now
+from pendulum import datetime, duration, now, DateTime
 
 from above.common.constants import (
     ENVIRONMENT_FLAG,
@@ -26,7 +26,7 @@ from above.common.snowflake_utils import snowflake_query_to_pandas_dataframe
 
 logger: logging.Logger = logging.getLogger(__name__)
 THIS_FILENAME: str = str(os.path.basename(__file__).replace(".py", ""))
-DAG_START_DATE: datetime = datetime(2025, 9, 16, tz="UTC")
+DAG_START_DATE: DateTime = datetime(2025, 9, 16, tz="UTC")
 
 GDS_CREDENTIALS: Dict = json.loads(Variable.get("gds"))
 AUDIT_LOG_AUTH_TOKEN = GDS_CREDENTIALS.get("audit_log_auth_token")
