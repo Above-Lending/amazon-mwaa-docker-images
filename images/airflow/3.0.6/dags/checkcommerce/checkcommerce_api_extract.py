@@ -26,34 +26,48 @@ this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 dag_start_date: datetime = datetime(2025, 6, 18, tz="UTC")
 
 
-check_commerce_credentials: Dict = json.loads(Variable.get("checkcommerce"))
-MERCHANT_NUMBER = check_commerce_credentials.get("merchant_number")
-MERCHANT_PASSWORD = check_commerce_credentials.get("merchant_password")
-AUTH_URL = check_commerce_credentials.get("auth_url")
-REPORT_URL = check_commerce_credentials.get("report_url")
 
 RAW_SCHEMA_NAME: str = "CHECK_COMMERCE"
 
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-snowflake_hook.database = RAW_DATABASE_NAME
-snowflake_hook.schema = RAW_SCHEMA_NAME
-snowflake_connection: SnowflakeConnection = snowflake_hook.get_conn()
+# Cache for credentials to avoid repeated Variable.get() calls within same DAG run
+_credentials_cache: Dict | None = None
+_snowflake_conn_cache: SnowflakeConnection | None = None
 
-PARAMS = {
-    "UserName": MERCHANT_NUMBER,
-    "Password": MERCHANT_PASSWORD,
-    "Action": "Token",
-    "OutputType": "JSON"
-}
+def get_check_commerce_credentials() -> Dict:
+    """Lazily retrieve Check Commerce credentials at runtime, not import time."""
+    global _credentials_cache
+    if _credentials_cache is None:
+        _credentials_cache = json.loads(Variable.get("checkcommerce"))
+    return _credentials_cache
 
-def get_token(AUTH_URL: str, PARAMS: dict) -> List:
-    auth_response = requests.get(AUTH_URL, params=PARAMS)
+def get_snowflake_connection() -> SnowflakeConnection:
+    """Lazily create Snowflake connection at runtime, not import time."""
+    global _snowflake_conn_cache
+    if _snowflake_conn_cache is None:
+        snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook.database = RAW_DATABASE_NAME
+        snowflake_hook.schema = RAW_SCHEMA_NAME
+        _snowflake_conn_cache = snowflake_hook.get_conn()
+    return _snowflake_conn_cache
+
+def get_token() -> str:
+    """Lazily retrieve API token at runtime, not import time."""
+    creds = get_check_commerce_credentials()
+    params = {
+        "UserName": creds.get("merchant_number"),
+        "Password": creds.get("merchant_password"),
+        "Action": "Token",
+        "OutputType": "JSON"
+    }
+    auth_url = creds.get("auth_url")
+    
+    auth_response = requests.get(auth_url, params=params)
     auth_data = auth_response.json()
-    TOKEN = auth_data.get("Token")
-    if not TOKEN:
+    token = auth_data.get("Token")
+    if not token:
         logger.error("Error getting token")
-        raise AirflowFailException()
-    return TOKEN
+        raise AirflowFailException("Failed to retrieve API token")
+    return token
 
 def make_api_request(REPORT_URL: str, report_params: dict) -> List:
     try:
@@ -75,8 +89,6 @@ def response_to_dataframe(report_response: List) -> DataFrame:
     except Exception as e:
         logger.error(f"Other error: {e}")
     return df
-
-TOKEN = get_token(AUTH_URL, PARAMS)
 
 @task
 def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:

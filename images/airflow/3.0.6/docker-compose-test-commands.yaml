@@ -35,6 +35,9 @@ x-airflow-common: &airflow-common
     MWAA__SQS__CUSTOM_ENDPOINT: http://sqs:9324
     MWAA__SQS__QUEUE_URL: http://sqs:9324/000000000000/celery-queue
     MWAA__SQS__USE_SSL: False
+    
+    # Custom environment variables
+    ENVIRONMENT_FLAG: ${ENVIRONMENT_FLAG:-local}
 
   volumes:
     - ./dags:/usr/local/airflow/dags
