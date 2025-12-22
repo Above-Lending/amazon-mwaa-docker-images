@@ -39,6 +39,7 @@ DEV_CHANNEL   = "C08E2H7TYAD" # debug-swat
 
 
 CHANNELS = {
+    "debug-swat":                    "C08E2H7TYAD",
     "alerts-allocation":             "C08K302FSUE",
     "alerts-apps-prod":              "C05DEQSBF71",
     "alerts-capital-markets":        "C09KURQ6353",
@@ -148,7 +149,8 @@ def send_slack_file(chan: str, filename: str, file_path: str, message: str) -> N
         )
         logger.debug(f"File upload response: {response}")
     except SlackApiError as e:
-        log_error(f"Slack API error in channel: {channel}, comment: {message},  {e.response['error']}")
+        error_msg = e.response.get('error', 'Unknown error') if hasattr(e, 'response') and isinstance(e.response, dict) else str(e)
+        log_error(f"Slack API error in channel: {channel}, comment: {message}, error: {error_msg}")
     except Exception as e:
         log_error(f"Error sending file to Slack: {str(e)}")
 

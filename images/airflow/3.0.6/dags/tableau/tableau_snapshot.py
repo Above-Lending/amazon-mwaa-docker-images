@@ -22,9 +22,6 @@ logger.setLevel(logging.DEBUG)
 
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 dag_start_date: DateTime = datetime(2024, 6, 1, tz="UTC")
-tableau_env: dict[str, str] = json.loads(Variable.get("tableau"))
-TOKEN_NAME: str = tableau_env["TOKEN_NAME"]
-TOKEN_SECRET: str = tableau_env["TOKEN_SECRET"]
 
 
 @dag(
@@ -46,6 +43,8 @@ TOKEN_SECRET: str = tableau_env["TOKEN_SECRET"]
     ),
 )
 def run() -> None:
+    tableau_env: dict[str, str] = json.loads(Variable.get("tableau"))
+    
     tableau_snapshot: TableauOperator = TableauOperator(
         task_id="snapshot_tableau",
         updated_since=r"{{ data_interval_start.subtract(years=10).strftime('%Y-%m-%dT%H:%M:%SZ') }}",
