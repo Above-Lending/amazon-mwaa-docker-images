@@ -204,7 +204,6 @@ def report_failed_request_ids(failed_request_ids_batches: list[list[str]]) -> No
         retries=3,
         retry_delay=duration(minutes=5),
         execution_timeout=duration(minutes=420),
-        provide_context=True,
         on_failure_callback=task_failure_slack_alert_hook,
     ),
 )

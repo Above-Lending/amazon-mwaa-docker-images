@@ -334,7 +334,7 @@ def create_dynamic_dag(observation: Dict) -> DAG:
 
         @dag(
             dag_id=f"swat__{bundle_name}",
-            schedule_interval=cron_schedule,
+            schedule=cron_schedule,
             start_date=datetime(2025, 3, 20),
             catchup=False,
         )
@@ -424,7 +424,7 @@ def load_jobs_from_yaml_directory():
 @dag(
     "static_main_swat",
     default_args={"owner": "data", "retries": 0},
-    schedule_interval="20 * * * *",
+    schedule="20 * * * *",
     start_date=datetime(2025, 3, 20),
     catchup=False,
 )

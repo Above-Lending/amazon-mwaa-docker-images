@@ -156,7 +156,6 @@ with DAG(
         s3_in_bucket=S3_DATALAKE_BUCKET,
         s3_source_dir=S3_SOURCE_DIR,
         s3_source_archive_dir=S3_SOURCE_ARCHIVE_DIR,
-        dag=dag
     )
 
     preprocess = PreprocessFilesOperator(
@@ -169,13 +168,11 @@ with DAG(
         s3_error_dir=S3_ERROR_DIR,
         s3_success_dir=S3_SUCCESS_DIR,
         file_parsing_args={"sep": ","},
-        dag=dag
     )
 
     trigger_load_dag = TriggerDagRunOperator(
         task_id="trigger_dag_{}_load".format(DATA_SOURCE),
         trigger_dag_id="{}_load".format(DATA_SOURCE),
-        dag=dag
     )
 
     chain(
