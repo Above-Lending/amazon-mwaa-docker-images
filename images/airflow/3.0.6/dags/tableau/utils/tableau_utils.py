@@ -10,10 +10,16 @@ from typing import Any, Dict
 
 from airflow.exceptions import AirflowException
 from airflow.models import Variable
-from pendulum import DateTime, duration
+from pendulum import duration
 
-from above.common.constants import ENVIRONMENT_FLAG
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.constants import (
+    ENVIRONMENT_FLAG,
+    S3_CONN_ID,
+    S3_DATALAKE_BUCKET,
+    TABLEAU_SERVER_URL,
+    TABLEAU_SITE_ID,
+)
+from above.common.slack_alert import task_failure_slack_alert
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -37,21 +43,20 @@ def get_tableau_credentials() -> Dict[str, str]:
         raise AirflowException(f"Failed to retrieve Tableau credentials: {e}")
 
 
-def get_tableau_dag_default_args(start_date: DateTime) -> dict[str, Any]:
+def get_tableau_dag_default_args() -> dict[str, Any]:
     """
     Get standard default arguments for Tableau DAGs.
 
-    :param start_date: The start date for the DAG
+
     :return: Dictionary of default arguments
     """
     return dict(
         owner="Data Engineering",
-        start_date=start_date,
         depends_on_past=False,
         retries=0,  # Manually retry only after manual re-rerun
         retry_delay=duration(minutes=10),
         execution_timeout=duration(minutes=120),
-        on_failure_callback=task_failure_slack_alert_hook
+        on_failure_callback=task_failure_slack_alert
         if ENVIRONMENT_FLAG == "prod"
         else None,
     )

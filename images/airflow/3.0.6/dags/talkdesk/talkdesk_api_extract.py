@@ -19,7 +19,7 @@ from above.common.constants import (
     DATALAKE_ERROR_DIR, DATALAKE_PREPROCESSED_DIR, DATALAKE_SOURCE_ARCHIVE_DIR,
     DATALAKE_SOURCE_DIR, DATALAKE_SUCCESS_DIR, S3_CONN_ID, S3_DATALAKE_BUCKET
 )
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.slack_alert import task_failure_slack_alert
 from talkdesk.common.talkdesk import get_talkdesk_api_auth_token
 from above.common.utils import put_df_to_s3_bucket_name
 from above.operators.preprocess_files_operator import (
@@ -146,7 +146,7 @@ with DAG(
             retries=3,
             retry_delay=timedelta(minutes=45),
             execution_timeout=timedelta(minutes=9),
-            on_failure_callback=task_failure_slack_alert_hook
+            on_failure_callback=task_failure_slack_alert
         )
 ) as dag:
 

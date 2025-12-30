@@ -176,7 +176,7 @@ def log_to_snowflake_hist(schema: str, job_name: str, df):
         return
     try:
         snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-        completed_at = pendulum.now("America/Chicago").to_datetime_string()
+        completed_at = pendulum.now("America/Chicago")
         job_run_uuid = str(uuid.uuid4())
         alert_key = f"{schema.upper()}::{job_name.upper()}"
         
@@ -334,7 +334,7 @@ def create_dynamic_dag(observation: Dict) -> DAG:
 
         @dag(
             dag_id=f"swat__{bundle_name}",
-            schedule=cron_schedule,
+            schedule_interval=cron_schedule,
             start_date=datetime(2025, 3, 20),
             catchup=False,
         )
@@ -424,7 +424,7 @@ def load_jobs_from_yaml_directory():
 @dag(
     "static_main_swat",
     default_args={"owner": "data", "retries": 0},
-    schedule="20 * * * *",
+    schedule_interval="20 * * * *",
     start_date=datetime(2025, 3, 20),
     catchup=False,
 )
@@ -439,7 +439,15 @@ def alert_dag():
             globals()[dag.__name__] = dag()
             dynamic_dag_ids.append(dag().dag_id)
 
-    # Note: DagModel database access is not allowed in Airflow 3.0
-    # The paused DAG check has been removed. Monitor DAG states via the UI or API instead.
+    paused = []
+    for dag_id in dynamic_dag_ids:
+        dag_model = DagModel.get_current(dag_id)
+        if dag_model is None:
+            paused.append(f"{dag_id} (not found)")
+        elif dag_model.is_paused:
+            paused.append(dag_id)
+
+    if paused and ENVIRONMENT_FLAG == "prod":
+        log_error(f"Paused dags {paused}")
 
 alert_dag()

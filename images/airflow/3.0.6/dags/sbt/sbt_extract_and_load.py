@@ -12,23 +12,14 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from numpy import NaN
 from pandas import DataFrame, concat
 from pendulum import (
-    DateTime,
-    datetime,
-    duration,
-    interval,
-    now,
-    parse,
-    DateTime,
-    Date,
-    Time,
-    Duration,
+    DateTime, datetime, duration, interval, now, parse
 )
 from snowflake.connector.pandas_tools import write_pandas
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 
 from above.common.constants import RAW_DATABASE_NAME, SNOWFLAKE_CONN_ID
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.slack_alert import task_failure_slack_alert
 from above.common.snowflake_utils import query_to_dataframe
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -44,7 +35,7 @@ base_url: str = "https://t2c-api.solutionsbytext.com"
 default_page_size: int = 1000  # API default is 10
 TOKEN_EXPIRATION_IN_SECONDS: int = 30 * 60  # 30 minutes
 api_date_format: str = "MM/DD/YYYY HH:mm:ss"
-api_start_date: DateTime = datetime(2023, 5, 1, tz="UTC")
+api_start_date: datetime = datetime(2023, 5, 1, tz='UTC')
 brands: List = json.loads(Variable.get("sbt_brands"))
 groups: List = json.loads(Variable.get("sbt_groups"))
 
@@ -57,7 +48,7 @@ def _set_access_token() -> Tuple[str, DateTime]:
     """
     client_id: str = Variable.get("sbt_client_id")
     client_secret: str = Variable.get("sbt_client_secret")
-
+    
     url: str = "https://login.solutionsbytext.com/connect/token"
     response: requests.Response = requests.post(
         url,
@@ -65,27 +56,20 @@ def _set_access_token() -> Tuple[str, DateTime]:
             "grant_type": "client_credentials",
             "client_id": client_id,
             "client_secret": client_secret,
-        },
+        }
     )
 
     if response.status_code == 200:
         response_json: Dict = response.json()
-        access_token: str | None = response_json.get("access_token")
-
-        if not access_token:
-            raise ValueError("No access token in response")
-
-        token_duration: int = response_json.get(
-            "expires_in", TOKEN_EXPIRATION_IN_SECONDS
-        )
+        access_token: str = response_json.get("access_token")
+        token_duration: int = response_json.get("expires_in", TOKEN_EXPIRATION_IN_SECONDS)
         expires_at: DateTime = now() + duration(seconds=token_duration)
         logger.info(
             "Received SBT access token ...%s, expires %s.",
-            access_token[:10],
-            expires_at,
+            access_token[:10], expires_at
         )
         Variable.set("sbt_access_token", access_token)
-        Variable.set("sbt_access_expires_at", expires_at.isoformat())
+        Variable.set("sbt_access_expires_at", expires_at)
     else:
         logger.error("HTTP %d %s", response.status_code, response.reason)
         raise ValueError("Unable to get SBT access token")
@@ -101,24 +85,14 @@ def get_access_token() -> str:
     """
     access_token: str = Variable.get("sbt_access_token", default_var=None)
     expires_at: str = Variable.get("sbt_access_expires_at", default_var=None)
-    parsed_expires_at: Date | Time | DateTime | Duration | None = (
-        parse(expires_at) if expires_at else None
-    )
-
-    if parsed_expires_at is not None and not isinstance(parsed_expires_at, DateTime):
-        logger.warning(
-            "sbt_access_expires_at variable is not a DateTime; fetching new token."
-        )
-        parsed_expires_at = None
-
     five_minutes_remaining: DateTime = now() + duration(seconds=300)
     if (
-        access_token is None
-        or parsed_expires_at is None
-        or parsed_expires_at < five_minutes_remaining
+            access_token is None or
+            expires_at is None or
+            parse(expires_at) < five_minutes_remaining
     ):
         try:
-            access_token, _ = _set_access_token()
+            access_token, expires_at = _set_access_token()
         except Exception as e:
             logger.error("Error fetching access token: %s", e)
             raise
@@ -168,7 +142,9 @@ def switch_table(from_name: str, to_name: str) -> None:
     rename_table(from_name=from_name, to_name=to_name)
 
 
-def get_latest_timestamp_from_table(table_name: str, column_name: str) -> DateTime:
+def get_latest_timestamp_from_table(
+        table_name: str, column_name: str
+) -> DateTime:
     """
     Determines how fresh a table's data are by its most recent timestamp.
     This is used to increment a table's data to pick up when it leaves off.
@@ -196,8 +172,7 @@ def get_latest_timestamp_from_table(table_name: str, column_name: str) -> DateTi
         logger.error("Exception: %s %s", type(error), error)
         logger.warning(
             "Table %s doesn't exist or not authorized; using %s",
-            table_name,
-            api_start_date,
+            table_name, api_start_date
         )
     return latest_timestamp
 
@@ -228,7 +203,9 @@ def replace_empty_with_none(value: Any) -> Any:
     return value if value else None
 
 
-def write_pandas_to_database(dataframe: DataFrame, table_name: str) -> Tuple[bool, int]:
+def write_pandas_to_database(
+        dataframe: DataFrame, table_name: str
+) -> Tuple[bool, int]:
     """
     Inserts Pandas DataFrame data into the specified table in the configured
     raw database and schema
@@ -238,14 +215,10 @@ def write_pandas_to_database(dataframe: DataFrame, table_name: str) -> Tuple[boo
     """
     global database_schema
     success, number_of_chunks, number_of_rows, _ = write_pandas(
-        snowflake_connection,
-        dataframe,
-        table_name,
-        database=RAW_DATABASE_NAME,
-        schema=database_schema,
-        auto_create_table=True,
-        quote_identifiers=True,
-        use_logical_type=True,
+        snowflake_connection, dataframe, table_name,
+        database=RAW_DATABASE_NAME, schema=database_schema,
+        auto_create_table=True, quote_identifiers=True,
+        use_logical_type=True
     )
     if success:
         logger.info("%d row(s) written", number_of_rows)
@@ -302,24 +275,20 @@ def get_subscribers() -> None:
             logger.info("Reading page %d of %d...", page_number, total_pages)
             subscribers: List = response_data.get("data")
             df = concat([df, DataFrame(subscribers)])
-            df = df.drop_duplicates(
-                [
-                    "id",
-                    "firstName",
-                    "lastName",
-                    # , 'middleName'
-                    "msisdn",
-                    # , 'landLineNo'
-                    # ,  'email'
-                    "status",
-                    "carrierName",
-                    "carrierId",
-                    "firstOptInDate",
-                    "lastOptinDate",
-                    "lastOptoutDate",
-                    "optinType",
-                ]
-            )
+            df = df.drop_duplicates(['id'
+                , 'firstName'
+                , 'lastName'
+                #, 'middleName'
+                , 'msisdn'
+                #, 'landLineNo'
+                #,  'email'
+                , 'status'
+                , 'carrierName'
+                , 'carrierId'
+                , 'firstOptInDate'
+                , 'lastOptinDate'
+                , 'lastOptoutDate'
+                , 'optinType'])            
             page_number += 1
             if page_number > total_pages:
                 logger.info("...%d record(s) parsed", total_count)
@@ -457,7 +426,8 @@ def get_shorturl_click_details():
         for download_date in download_dates:
             from_date: str = download_date.format(api_date_format)
             data_end_at: DateTime = min(
-                download_date.add(days=1).subtract(microseconds=1), request_time
+                download_date.add(days=1).subtract(microseconds=1),
+                request_time
             )  # future date causes HTTP 400, Bad Request
             to_date: str = data_end_at.format(api_date_format)
             page_number: int = 1
@@ -467,12 +437,16 @@ def get_shorturl_click_details():
                     f"?pageNumber={page_number}&pageSize={page_size}"
                     f"&fromDate={from_date}&toDate={to_date}"
                 )
-                response_data, total_count, total_pages = get_data_from_api(url)
+                response_data, total_count, total_pages = get_data_from_api(
+                    url
+                )
                 if total_pages == 0:
                     logger.info("No click details!")
                     break
 
-                logger.info("Parsing page %d of %d...", page_number, total_pages)
+                logger.info(
+                    "Parsing page %d of %d...", page_number, total_pages
+                )
                 click_details: List = response_data.get("data")
                 df = concat([df, DataFrame(click_details)])
                 page_number += 1
@@ -511,7 +485,8 @@ def get_inbound_messages():
         for download_date in download_dates:
             from_date: str = download_date.format(api_date_format)
             data_end_at: DateTime = min(
-                download_date.add(days=1).subtract(microseconds=1), request_time
+                download_date.add(days=1).subtract(microseconds=1),
+                request_time
             )  # future date causes HTTP 400, Bad Request
             to_date: str = data_end_at.format(api_date_format)
             page_number: int = 1
@@ -521,12 +496,16 @@ def get_inbound_messages():
                     f"?pageNumber={page_number}&pageSize={page_size}"
                     f"&fromDate={from_date}&toDate={to_date}"
                 )
-                response_data, total_count, total_pages = get_data_from_api(url)
+                response_data, total_count, total_pages = get_data_from_api(
+                    url
+                )
                 if total_pages == 0:
                     logger.info("No inbound messages!")
                     break
 
-                logger.info("Reading page %d of %d...", page_number, total_pages)
+                logger.info(
+                    "Reading page %d of %d...", page_number, total_pages
+                )
                 messages: List = response_data.get("data")
                 df = concat([df, DataFrame(messages)])
                 page_number += 1
@@ -569,7 +548,8 @@ def get_outbound_messages():
         for download_date in download_dates:
             from_date: str = download_date.format(api_date_format)
             data_end_at: DateTime = min(
-                download_date.add(days=1).subtract(microseconds=1), request_time
+                download_date.add(days=1).subtract(microseconds=1),
+                request_time
             )  # future date causes HTTP 400, Bad Request
             to_date: str = data_end_at.format(api_date_format)
             page_number: int = 1
@@ -579,23 +559,19 @@ def get_outbound_messages():
                     f"?pageNumber={page_number}&pageSize={page_size}"
                     f"&fromDate={from_date}&toDate={to_date}"
                 )
-                response_data, total_count, total_pages = get_data_from_api(url)
+                response_data, total_count, total_pages = get_data_from_api(
+                    url
+                )
                 if total_pages == 0:
                     logger.info(
                         "No outbound messages for group %s from %s to %s.",
-                        group,
-                        from_date,
-                        to_date,
+                        group, from_date, to_date
                     )
                     break
 
                 logger.info(
                     "Reading page %d of %d for group %s from %s to %s...",
-                    page_number,
-                    total_pages,
-                    group,
-                    from_date,
-                    to_date,
+                    page_number, total_pages, group, from_date, to_date
                 )
                 messages: List = response_data.get("data")
                 df = concat([df, DataFrame(messages)])
@@ -622,7 +598,7 @@ def get_outbound_messages():
 @dag(
     dag_id=this_filename,
     description="Extracts SBT API data and loads into the data warehouse",
-    tags=["data", "sbt", "solutions by text"],
+    tags=['data', 'sbt', 'solutions by text'],
     schedule="33 09 * * *",  # Daily 0333 CST/0433 CDT
     start_date=api_start_date,
     max_active_runs=1,
@@ -634,11 +610,11 @@ def get_outbound_messages():
         retries=1,
         retry_delay=timedelta(minutes=10),
         execution_timeout=timedelta(minutes=60),
-        on_failure_callback=task_failure_slack_alert_hook,
-    ),
+        on_failure_callback=task_failure_slack_alert
+    )
 )
 def sbt_extract_and_load():
-    # get_access_token()  # Necessary to prevent race condition by parallel tasks
+    #get_access_token()  # Necessary to prevent race condition by parallel tasks
     get_shorturl_clicks()
     get_shorturl_click_details()
     get_inbound_messages()
@@ -648,3 +624,4 @@ def sbt_extract_and_load():
 
 
 sbt_extract_and_load()
+

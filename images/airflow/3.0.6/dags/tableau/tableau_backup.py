@@ -29,7 +29,7 @@ dag_start_date: DateTime = datetime(2024, 6, 1, tz="UTC")
     start_date=dag_start_date,
     max_active_runs=1,
     catchup=False,
-    default_args=get_tableau_dag_default_args(dag_start_date),
+    default_args=get_tableau_dag_default_args(),
 )
 def tableau_backup() -> None:
     """

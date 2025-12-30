@@ -25,6 +25,7 @@ from tableauserverclient import (
 from above.common.utils import copy_file_to_s3
 from tableau.utils.tableau_utils import get_tableau_credentials
 
+# Retry configuration for workbook downloads
 RETRY_DOWNLOAD_LIMIT: int = 3
 RETRY_WAIT_SECS: int = 5
 
@@ -128,8 +129,11 @@ class TableauOperator(BaseOperator):
         :param workbook: Workbook to be populated.
         :type workbook: WorkbookItem
         """
-        server.workbooks.populate_views(workbook_item=workbook)
-        server.workbooks.populate_connections(workbook_item=workbook)
+        try:
+            self.server.workbooks.populate_views(workbook_item=workbook)
+            self.server.workbooks.populate_connections(workbook_item=workbook)
+        except ServerResponseError as error:
+            logger.error(error)
 
     def _create_request_options_filter(self) -> RequestOptions:
         """
@@ -149,21 +153,6 @@ class TableauOperator(BaseOperator):
         request_opts = RequestOptions()
         request_opts.filter.add(recent_update_filter)
         return request_opts
-
-    def _populate_workbook_views_and_connections(self, workbook: WorkbookItem) -> None:
-        """
-        Populate the Views and Connections for ``workbook``.
-
-        Reference: https://tableau.github.io/server-client-python/docs/populate-connections-views.html
-
-        :param workbook: Workbook to be populated.
-        :type workbook: WorkbookItem
-        """
-        try:
-            self.server.workbooks.populate_views(workbook_item=workbook)
-            self.server.workbooks.populate_connections(workbook_item=workbook)
-        except ServerResponseError as error:
-            logger.error(error)
 
     def _download_workbook(self, workbook: WorkbookItem, dest: str) -> str:
         """Download workbook and return file path of downloaded workbook."""
@@ -244,7 +233,14 @@ class TableauOperator(BaseOperator):
         return workbooks
 
     def execute(self, context: dict[str, Any]) -> None:
+        """Execute the operator to download and upload Tableau workbooks."""
+        logger.info(
+            f"Starting Tableau backup for workbooks updated since: {self.updated_since}"
+        )
+
         self.server = self._connect()
+        logger.info(f"Connected to Tableau Server: {self.server_url}")
+
         request_opts: RequestOptions = self._create_request_options_filter()
 
         # Gets workbooks with the filtered criteria, returns workbook pager (functionally a generator).
@@ -252,6 +248,37 @@ class TableauOperator(BaseOperator):
         pager: Pager = Pager(endpoint=self.server.workbooks, request_opts=request_opts)
         workbooks = self._get_workbooks_from_pager(pager=pager)
 
-        for workbook in workbooks:
-            self._populate_workbook_views_and_connections(workbook=workbook)
-            self._upload_workbook_binary_to_s3(workbook=workbook)
+        logger.info(f"Found {len(workbooks)} workbook(s) to backup")
+
+        success_count = 0
+        failures: list[tuple[str, str]] = []  # List of (workbook_name, error_message)
+
+        for idx, workbook in enumerate(workbooks, 1):
+            try:
+                logger.info(
+                    f"Processing workbook {idx}/{len(workbooks)}: {workbook.name}"
+                )
+                self._populate_workbook_with_views_and_connections(workbook=workbook, server=self.server)
+                self._upload_workbook_binary_to_s3(workbook=workbook)
+                success_count += 1
+                logger.info(f"Successfully backed up: {workbook.name}")
+            except Exception as e:
+                error_msg = str(e)
+                failures.append((workbook.name, error_msg))
+                logger.error(f"Failed to backup workbook {workbook.name}: {error_msg}")
+                # Continue processing remaining workbooks
+
+        # Log summary
+        logger.info(
+            f"Tableau backup complete. Success: {success_count}, Failed: {len(failures)}, "
+            f"S3 Location: s3://{self.s3_bucket}/{self.s3_directory}"
+        )
+
+        # Fail the task if any workbooks failed, with details
+        if failures:
+            failure_details = "\n".join(
+                [f"  - {name}: {error}" for name, error in failures]
+            )
+            raise Exception(
+                f"Failed to backup {len(failures)} workbook(s):\n{failure_details}"
+            )

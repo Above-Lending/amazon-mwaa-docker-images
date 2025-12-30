@@ -4,7 +4,7 @@ import os
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.providers.snowflake.operators.snowflake import SnowflakeSqlApiOperator
+from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 
 from above.operators.snowflake_json_table_to_relational import \
     SnowflakeJsonTableToRelational
@@ -35,9 +35,9 @@ def load_raw_from_s3(
         snowflake_conn_id,
         query_params,
         default_args,
-        config_file_dir: str,
+        config_file_dir,
         sql_template_searchpath,
-        schedule=None,
+        schedule_interval=None,
         catchup=False,
         tags=None
 ):
@@ -54,7 +54,7 @@ def load_raw_from_s3(
 
     dag = DAG(
         dag_id,
-        schedule=schedule,
+        schedule_interval=schedule_interval,
         default_args=default_args,
         template_searchpath=sql_template_searchpath,
         catchup=catchup,
@@ -62,7 +62,7 @@ def load_raw_from_s3(
     )
 
     with dag:
-        init: SnowflakeSqlApiOperator = SnowflakeSqlApiOperator(
+        init = SnowflakeOperator(
             task_id='init',
             snowflake_conn_id=snowflake_conn_id,
             sql='init_json.sql',
@@ -118,6 +118,7 @@ def load_raw_from_s3(
 
         consolidate = PythonOperator(
             task_id='consolidate_field_diffs',
+            provide_context=True,
             python_callable=consolidate_field_diffs,
             op_kwargs={'task_ids': generate_view_task_ids},
             dag=dag,

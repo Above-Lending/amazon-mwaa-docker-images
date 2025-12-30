@@ -17,7 +17,7 @@ from sqlalchemy.engine import Engine
 from typing_extensions import LiteralString
 
 from above.common.constants import SNOWFLAKE_CONN_ID
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.slack_alert import task_failure_slack_alert
 from talkdesk.common.talkdesk import get_talkdesk_api_auth_token
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -179,7 +179,7 @@ def create_talkdesk_record_lists(auth_token: str, view_name: str, record_list_na
         retries=1,
         retry_delay=duration(minutes=3),
         execution_timeout=duration(minutes=10),
-        on_failure_callback=task_failure_slack_alert_hook,
+        on_failure_callback=task_failure_slack_alert,
     ),
 )
 def talkdesk_dialer():
@@ -188,7 +188,9 @@ def talkdesk_dialer():
         check_is_business_day(),
         check_dialer_list_freshness(),
         create_talkdesk_record_lists(auth_token, 'alerts.airflow.dpd_below_thirty', '1_29_dpd'),
-        create_talkdesk_record_lists(auth_token,'alerts.airflow.dpd_plus_thirty', '30_119_dpd')
+        create_talkdesk_record_lists(auth_token,'alerts.airflow.dpd_plus_thirty', '30_119_dpd'),
+        create_talkdesk_record_lists(auth_token,'alerts.airflow.DPD_ONE_LIST', '1_119_dpd')
+
     )
 
 

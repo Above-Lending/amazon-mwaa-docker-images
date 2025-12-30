@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 import pandas as pd
 from airflow.models import BaseOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.utils.decorators import apply_defaults
 from fsplit.filesplit import Filesplit as FileSplit
 
 # TODO add support for csv.gz
@@ -26,6 +27,7 @@ supported_file_extensions = [
 
 class PreprocessFilesBaseOperator(BaseOperator):
 
+    @apply_defaults
     def __init__(
             self,
             *args,
@@ -62,6 +64,7 @@ class UnzipSplitFilesOperator(PreprocessFilesBaseOperator):
     prepare for preprocessing
     """
 
+    @apply_defaults
     def __init__(
             self,
             s3_conn_id,
@@ -260,6 +263,7 @@ class UnzipSplitFilesOperator(PreprocessFilesBaseOperator):
 
 class PreprocessFilesOperator(PreprocessFilesBaseOperator):
 
+    @apply_defaults
     def __init__(
             self,
             s3_conn_id,

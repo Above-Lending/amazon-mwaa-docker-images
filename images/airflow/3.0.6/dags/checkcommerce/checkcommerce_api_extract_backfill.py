@@ -76,6 +76,15 @@ def response_to_dataframe(report_response: List) -> DataFrame:
         logger.error(f"Other error: {e}")
     return df
 
+
+def check_for_report_response_error_in_response(text: str):
+    error_str: str = "An error occurred while processing your request."
+    if error_str in text:
+        logger.error(f"Error: {error_str}")
+        raise AirflowFailException()
+
+
+
 TOKEN = get_token(AUTH_URL, PARAMS)
 
 @task
@@ -96,6 +105,8 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
     report_response = make_api_request(REPORT_URL, report_params)
 
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -215,6 +226,8 @@ def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_U
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -308,6 +321,8 @@ def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, 
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -424,6 +439,8 @@ def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN:
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
     if not df.empty:
@@ -612,6 +629,8 @@ def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, R
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -706,11 +725,9 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
     :return: None
     """
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
+    logger.info(snowflake_connection)
+    start_date_string = '2025-12-15'
+    end_date_string = '2025-12-16'
 
     report_params = {
         "Token": TOKEN,
@@ -725,6 +742,8 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -921,11 +940,8 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
     :return: None
     """
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
+    start_date_string = '2025-12-15'
+    end_date_string = '2025-12-16'
 
     report_params = {
         "Token": TOKEN,
@@ -940,6 +956,8 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -1136,11 +1154,8 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
     :return: None
     """
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
+    start_date_string = '2025-12-15'
+    end_date_string = '2025-12-16'
 
     report_params = {
         "Token": TOKEN,
@@ -1155,6 +1170,8 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -1351,11 +1368,8 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
     :return: None
     """
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
+    start_date_string = '2025-12-15'
+    end_date_string = '2025-12-16'
 
     report_params = {
         "Token": TOKEN,
@@ -1370,6 +1384,8 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -1548,11 +1564,8 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
     :return: None
     """
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
+    start_date_string = '2025-12-15'
+    end_date_string = '2025-12-16'
 
     report_params = {
         "Token": TOKEN,
@@ -1567,6 +1580,8 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
     report_response = make_api_request(REPORT_URL, report_params)
         
     if report_response.status_code == 200:
+        check_for_report_response_error_in_response(text=report_response.text)
+
         df = response_to_dataframe(report_response)
 
         if not df.empty:

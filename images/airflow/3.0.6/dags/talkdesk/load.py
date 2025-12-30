@@ -14,7 +14,7 @@ from above.common.constants import (
     STORAGE_INTEGRATION_NAME
 )
 from above.common.dag_generators import load_raw_from_s3
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.slack_alert import task_failure_slack_alert
 
 default_args = {
     'owner': 'Data Engineering',
@@ -23,7 +23,7 @@ default_args = {
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
     'catchup': False,
-    'on_failure_callback': task_failure_slack_alert_hook
+    'on_failure_callback': task_failure_slack_alert
 }
 
 LOAD_FOLDER: str = os.path.join(DAGS_FOLDER, 'talkdesk/config/load')
