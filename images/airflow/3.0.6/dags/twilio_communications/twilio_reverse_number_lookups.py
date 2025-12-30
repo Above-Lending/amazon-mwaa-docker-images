@@ -9,7 +9,7 @@ import os
 from airflow.decorators import dag
 from pendulum import datetime, duration
 
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.slack_alert import task_failure_slack_alert
 from above.common.constants import ENVIRONMENT_FLAG
 from twilio_communications.operators.twilio_lookup_operator import TwilioLookupOperator
 
@@ -28,13 +28,12 @@ DAG_START_DATE = datetime(2024, 6, 1, tz="UTC")
     catchup=False,
     default_args={
         "owner": "Data Engineering",
-        "start_date": DAG_START_DATE,
         "depends_on_past": False,
         "retries": 0,  # Manually retry only after manual dbt re-rerun
         "retry_delay": duration(minutes=10),
         "execution_timeout": duration(minutes=60),
         "on_failure_callback": (
-            task_failure_slack_alert_hook if ENVIRONMENT_FLAG == "prod" else None
+            task_failure_slack_alert if ENVIRONMENT_FLAG == "prod" else None
         ),
     },
 )

@@ -35,7 +35,7 @@ def load_raw_from_s3(
         snowflake_conn_id,
         query_params,
         default_args,
-        config_file_dir: str,
+        config_file_dir,
         sql_template_searchpath,
         schedule=None,
         catchup=False,
@@ -62,12 +62,11 @@ def load_raw_from_s3(
     )
 
     with dag:
-        init: SnowflakeSqlApiOperator = SnowflakeSqlApiOperator(
+        init = SnowflakeSqlApiOperator(
             task_id='init',
             snowflake_conn_id=snowflake_conn_id,
             sql='init_json.sql',
             params=query_params,
-            dag=dag,
         )
 
         # NOTE: Removed a Bedrock block that does not apply to Above
@@ -87,7 +86,6 @@ def load_raw_from_s3(
             del (query_params_load_from_s3['storage_integration_name'])
             del (query_params_load_from_s3['external_stage_url'])
             load_json = SnowflakeLoadFromS3AndArchive(
-                dag=dag,
                 task_id='{}_load_json'.format(task_id),
                 snowflake_conn_id=snowflake_conn_id,
                 **config_args,
@@ -96,7 +94,6 @@ def load_raw_from_s3(
 
             generate_view_task_id = '{}_generate_view'.format(task_id)
             globals()[generate_view_task_id] = SnowflakeJsonTableToRelational(
-                dag=dag,
                 task_id=generate_view_task_id,
                 snowflake_conn_id=snowflake_conn_id,
                 fully_qualified_table_name='{}.{}.{}'.format(
@@ -113,17 +110,15 @@ def load_raw_from_s3(
 
             generate_view_task_ids.append(generate_view_task_id)
 
-            load_json.set_upstream(init)
-            globals()[generate_view_task_id].set_upstream(load_json)
+            init >> load_json >> globals()[generate_view_task_id]
 
         consolidate = PythonOperator(
             task_id='consolidate_field_diffs',
             python_callable=consolidate_field_diffs,
             op_kwargs={'task_ids': generate_view_task_ids},
-            dag=dag,
         )
 
         for task_id in generate_view_task_ids:
-            globals()[task_id].set_downstream(consolidate)
+            globals()[task_id] >> consolidate
 
     return dag

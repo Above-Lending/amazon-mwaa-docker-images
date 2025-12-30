@@ -61,7 +61,7 @@ def gzip_json_and_upload_to_s3(
     json_data: dict | str,
     s3_bucket: str,
     s3_key: str,
-    aws_conn_id: str | None = "aws_default",
+    aws_conn_id: str = "aws_default",
     replace: bool = True,
     verbose: bool = False,
     **context,

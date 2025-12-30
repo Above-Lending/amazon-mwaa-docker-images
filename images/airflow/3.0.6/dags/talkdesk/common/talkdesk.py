@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 import requests
-from airflow.models import Variable
+from airflow.sdk import Variable
 from pendulum import datetime, duration, now, parse, Duration, DateTime
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def _set_talkdesk_api_auth_token() -> str:
         f"expires {auth_expires_at}."
     )
     Variable.set("talkdesk_api_auth_token", auth_token)
-    Variable.set("talkdesk_api_auth_expires_at", auth_expires_at.isoformat())
+    Variable.set("talkdesk_api_auth_expires_at", str(auth_expires_at))
     return auth_token
 
 
@@ -62,8 +62,8 @@ def get_talkdesk_api_auth_token() -> str:
     if less than a minute remains.
     :return: Talkdesk auth token
     """
-    auth_token: str = Variable.get("talkdesk_api_auth_token", default_var=None)
-    expires_at: str = Variable.get("talkdesk_api_auth_expires_at", default_var=None)
+    auth_token: str = Variable.get("talkdesk_api_auth_token", default=None)
+    expires_at: str = Variable.get("talkdesk_api_auth_expires_at", default=None)
     if (
         auth_token
         and expires_at

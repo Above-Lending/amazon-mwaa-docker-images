@@ -1,89 +1,40 @@
 """Twilio Lookup Operator for reverse phone number lookups."""
 
-import json
 import logging
-import os
 import time
 from typing import Any, Optional, Dict, List
-from textwrap import dedent
-from botocore.exceptions import ClientError
 
-import pandas as pd
 from pandas import DataFrame
-from pendulum import datetime, now, today, instance, duration
+from pendulum import DateTime, now, instance
 from airflow.exceptions import AirflowException
-from airflow.models import BaseOperator, Variable
+from airflow.models import BaseOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from jinja2 import Template
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 from twilio.rest.lookups.v2.phone_number import PhoneNumberInstance
-from snowflake.connector import SnowflakeConnection
-from sqlalchemy.engine import Engine
 
 from above.common.constants import (
     RAW_DATABASE_NAME,
     SNOWFLAKE_CONN_ID,
     TRUSTED_DATABASE_NAME,
     ENVIRONMENT_FLAG,
-    S3_DATALAKE_BUCKET,
 )
 from above.common.snowflake_utils import dataframe_to_snowflake, query_to_dataframe
-from above.common.s3_utils import upload_string_to_s3, upload_file_to_s3
+from twilio_communications.common.twilio_utils import (
+    get_twilio_client,
+    build_active_numbers_query,
+    build_merge_query,
+    LOOKUP_LIMIT,
+    LOOKUP_REFRESH_MONTHS,
+    TWILIO_FIELDS,
+    RAW_SCHEMA_NAME,
+    RAW_TABLE_NAME,
+    MAX_FAILED_NUMBERS_TO_LOG,
+    TWILIO_API_DELAY_SECONDS,
+    MERGE_COLUMNS,
+)
 
 logger = logging.getLogger(__name__)
-
-S3_LOG_DIRECTORY_SUFFIX: str = (
-    "results/prod/twilio_lookup_logs/"
-    if ENVIRONMENT_FLAG == "prod"
-    else "results/dev/twilio_lookup_logs/"
-)
-S3_LOG_DIRECTORY: str = os.path.join(S3_DATALAKE_BUCKET, S3_LOG_DIRECTORY_SUFFIX)
-
-
-# Default constants
-DEFAULT_TWILIO_FIELDS = ["caller_name", "line_type_intelligence"]
-DEFAULT_LOOKUP_REFRESH_MONTHS = 12
-DEFAULT_API_DELAY_SECONDS = 0.05
-DEFAULT_MAX_FAILED_TO_LOG = 10
-
-LOOKUP_LIMIT: int = 5000 if ENVIRONMENT_FLAG == "prod" else 2  # Prevent costly runaways
-twilio_fields: List = ["caller_name", "line_type_intelligence"]
-twilio_credentials: Dict = json.loads(Variable.get("twilio"))
-twilio_client: Client = Client(
-    twilio_credentials.get("TWILIO_ACCOUNT_SID"),
-    twilio_credentials.get("TWILIO_AUTH_TOKEN"),
-)
-RAW_SCHEMA_NAME: str = "TWILIO"
-RAW_TABLE_NAME: str = "REVERSE_NUMBER_LOOKUPS"
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-snowflake_hook.database = RAW_DATABASE_NAME
-snowflake_hook.schema = RAW_SCHEMA_NAME
-sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
-snowflake_connection: SnowflakeConnection = snowflake_hook.get_conn()
-
-SQL_DIR: str = os.path.join(os.path.dirname(__file__), "..", "sql")
-LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this
-TWILIO_FIELDS: List[str] = ["caller_name", "line_type_intelligence"]
-# Define all columns for the merge operation to avoid duplication
-MERGE_COLUMNS: List[str] = [
-    "PHONE_NUMBER_E164",
-    "PHONE_NUMBER_NATIONAL_FORMAT",
-    "PHONE_TYPE",
-    "CARRIER_NAME",
-    "COUNTRY_CODE",
-    "CALLING_COUNTRY_CODE",
-    "MOBILE_COUNTRY_CODE",
-    "MOBILE_NETWORK_CODE",
-    "CALLER_NAME",
-    "CALLER_TYPE",
-    "IS_VALID",
-    "VALIDATION_ERRORS",
-    "_ERROR_CODE_CALLER",
-    "_ERROR_CODE_LINE_TYPE",
-    "_LAST_LOOKUP",
-    "_AIRFLOADED_AT",
-]
 
 
 class TwilioLookupOperator(BaseOperator):
@@ -111,13 +62,13 @@ class TwilioLookupOperator(BaseOperator):
 
     def __init__(
         self,
-        raw_table_name: str = "REVERSE_NUMBER_LOOKUPS",
-        raw_schema_name: str = "TWILIO",
+        raw_table_name: str = RAW_TABLE_NAME,
+        raw_schema_name: str = RAW_SCHEMA_NAME,
         twilio_fields: list[str] | None = None,
         lookup_limit: int = LOOKUP_LIMIT,
-        lookup_refresh_months: int = DEFAULT_LOOKUP_REFRESH_MONTHS,
-        api_delay_seconds: float = DEFAULT_API_DELAY_SECONDS,
-        max_failed_numbers_to_log: int = DEFAULT_MAX_FAILED_TO_LOG,
+        lookup_refresh_months: int = LOOKUP_REFRESH_MONTHS,
+        api_delay_seconds: float = TWILIO_API_DELAY_SECONDS,
+        max_failed_numbers_to_log: int = MAX_FAILED_NUMBERS_TO_LOG,
         sql_template_dir: str | None = None,
         skip_on_empty: bool = True,
         write_to_snowflake: bool = True,
@@ -127,7 +78,7 @@ class TwilioLookupOperator(BaseOperator):
         super().__init__(*args, **kwargs)
         self.raw_table_name = raw_table_name
         self.raw_schema_name = raw_schema_name
-        self.twilio_fields = twilio_fields or DEFAULT_TWILIO_FIELDS
+        self.twilio_fields = twilio_fields or TWILIO_FIELDS
         self.lookup_limit = lookup_limit
         self.lookup_refresh_months = lookup_refresh_months
         self.api_delay_seconds = api_delay_seconds
@@ -136,72 +87,18 @@ class TwilioLookupOperator(BaseOperator):
         self.skip_on_empty = skip_on_empty
         self.write_to_snowflake = write_to_snowflake
 
-    def _upload_lookup_to_s3(
-        self, record: dict, run_folder: str, phone_number: str
-    ) -> None:
-        """
-        Uploads individual lookup record to S3 as JSON.
-        """
-        ts = now("UTC").to_iso8601_string().replace(":", "").replace("-", "")
-        safe_number = phone_number.replace("+", "").replace("-", "").replace(" ", "")
-        s3_key: str = f"{S3_LOG_DIRECTORY_SUFFIX}{run_folder}/{ts}_{safe_number}.json"
-
-        upload_string_to_s3(
-            string_value=json.dumps(record, indent=2),
-            s3_bucket=S3_DATALAKE_BUCKET,
-            s3_key=s3_key,
-        )
-
-    def _load_sql_file(self, filename: str) -> str:
-        """
-        Load SQL file from the sql directory.
-
-        :param filename: Name of the SQL file to load
-        :return: SQL content as string
-        """
-        sql_path: str = os.path.join(SQL_DIR, filename)
-        try:
-            with open(sql_path, "r") as f:
-                return f.read()
-        except FileNotFoundError:
-            raise AirflowException(f"SQL file not found: {sql_path}")
-        except Exception as e:
-            raise AirflowException(f"Error loading SQL file {sql_path}: {e}")
-
-    def _render_sql_template(
-        self, template_content: str, params: Dict[str, Any]
-    ) -> str:
-        """
-        Render SQL template with Jinja2.
-
-        :param template_content: SQL template content
-        :param params: Parameters to render in the template
-        :return: Rendered SQL string
-        """
-        template = Template(template_content)
-        template_rendered = template.render(params=params)
-
-        logger.info("Rendering SQL template with params: %s", params)
-        logger.info("Template rendered: %s", template_rendered)
-
-        return template_rendered
-
     def _build_active_numbers_query(self) -> str:
         """
         Build SQL query to find active phone numbers needing lookup.
 
         :return: SQL query string
         """
-        template_content: str = self._load_sql_file("active_numbers_needing_lookup.sql")
-        return self._render_sql_template(
-            template_content,
-            {
-                "trusted_database": TRUSTED_DATABASE_NAME,
-                "raw_database": RAW_DATABASE_NAME,
-                "raw_schema": RAW_SCHEMA_NAME,
-                "raw_table": RAW_TABLE_NAME,
-                "lookup_refresh_months": LOOKUP_REFRESH_MONTHS,
-            },
+        return build_active_numbers_query(
+            trusted_database=TRUSTED_DATABASE_NAME,
+            raw_database=RAW_DATABASE_NAME,
+            raw_schema=self.raw_schema_name,
+            raw_table=self.raw_table_name,
+            lookup_refresh_months=self.lookup_refresh_months,
         )
 
     def _build_merge_query(self, suffix: str) -> str:
@@ -211,134 +108,289 @@ class TwilioLookupOperator(BaseOperator):
         :param suffix: Suffix for the updates table name
         :return: SQL MERGE statement
         """
-        # Columns to update (all except the primary key)
-        update_columns = [col for col in MERGE_COLUMNS if col != "PHONE_NUMBER_E164"]
-
-        template_content: str = self._load_sql_file("merge_reverse_lookup.sql")
-        rendered = self._render_sql_template(
-            template_content,
-            {
-                "raw_database": RAW_DATABASE_NAME,
-                "raw_schema": RAW_SCHEMA_NAME,
-                "raw_table": RAW_TABLE_NAME,
-                "suffix": suffix,
-                "update_columns": update_columns,
-                "insert_columns": MERGE_COLUMNS,
-            },
+        return build_merge_query(
+            raw_database=RAW_DATABASE_NAME,
+            raw_schema=self.raw_schema_name,
+            raw_table=self.raw_table_name,
+            suffix=suffix,
+            merge_columns=MERGE_COLUMNS,
         )
-        logger.info("Rendered template: %s", rendered)
-        return rendered
+
+    def _get_twilio_client(self) -> Client:
+        """
+        Initialize and return Twilio client from Airflow Variables.
+
+        :return: Configured Twilio client
+        :raises AirflowException: If Twilio credentials are missing or invalid
+        """
+        return get_twilio_client()
+
+    def _get_snowflake_hook(self) -> SnowflakeHook:
+        """
+        Initialize and return Snowflake hook configured for RAW database.
+
+        :return: Configured SnowflakeHook
+        """
+        hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        hook.database = RAW_DATABASE_NAME
+        hook.schema = RAW_SCHEMA_NAME
+        return hook
 
     def fetch_numbers_to_look_up(self) -> DataFrame:
         """
         Queries new leads/applicants' phone numbers and existing phone numbers
-        that need a lookup refresh (every 3 months)
-        :return: phone numbers reverse lookup dataframe
+        that need a lookup refresh
+
+        :return: DataFrame containing phone numbers needing reverse lookup
+        :raises ValueError: If number of lookups exceeds safety limit
         """
-        global LOOKUP_LIMIT
-        active_numbers_needing_lookup_query = self._build_active_numbers_query()
-        phone_numbers_df: DataFrame = query_to_dataframe(
-            active_numbers_needing_lookup_query
-        )
-        if (number_of_lookups := len(phone_numbers_df.index)) > LOOKUP_LIMIT:
-            logger.warning(
-                "Number of phone numbers (%d) exceeds failsafe lookup limit %d!  Using the head of the dataframe with limit %d.",
-                number_of_lookups,
-                LOOKUP_LIMIT,
-                LOOKUP_LIMIT,
+        query: str = self._build_active_numbers_query()
+
+        try:
+            phone_numbers_df: DataFrame = query_to_dataframe(query)
+        except Exception as e:
+            logger.error(f"Failed to fetch phone numbers: {e}")
+            raise AirflowException(f"Failed to fetch phone numbers from Snowflake: {e}")
+
+        number_of_lookups: int = len(phone_numbers_df.index)
+
+        if number_of_lookups > LOOKUP_LIMIT:
+            warn_msg = (
+                f"Number of phone numbers ({number_of_lookups}) exceeds "
+                f"failsafe lookup limit {LOOKUP_LIMIT}."
+                f"Limiting to lookup limit {LOOKUP_LIMIT}."
             )
+            # TODO: Have a slack hook that pops this into the airflow chat as a warning.
+            logger.error(warn_msg)
+
+            # Set the number of phone numbers as the lookup limit.
             phone_numbers_df = phone_numbers_df.head(LOOKUP_LIMIT)
 
-        logger.info("%d phone numbers need reverse lookups", number_of_lookups)
+        logger.info(f"{number_of_lookups} phone numbers need reverse lookups")
         return phone_numbers_df
+
+    def perform_twilio_lookup(
+        self, client: Client, phone_number: str, last_lookup: Optional[DateTime]
+    ) -> Optional[PhoneNumberInstance]:
+        """
+        Perform a single Twilio reverse lookup for a phone number.
+
+        :param client: Twilio client instance
+        :param phone_number: Phone number in E164 format
+        :param last_lookup: Timestamp of last lookup, if any
+        :return: PhoneNumberInstance or None if lookup fails
+        """
+        try:
+            if last_lookup:
+                last_verified_date: str = instance(last_lookup).format("YYYYMMDD")
+            else:
+                last_verified_date: str = "19700101"
+
+            response: PhoneNumberInstance = client.lookups.v2.phone_numbers(
+                phone_number
+            ).fetch(
+                fields=",".join(TWILIO_FIELDS), last_verified_date=last_verified_date
+            )
+            return response
+        except TwilioRestException as e:
+            logger.error(f"Twilio API error for {phone_number}: {e.code} - {e.msg}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error looking up {phone_number}: {e}")
+            return None
+
+    def process_lookup_response(
+        self, phone_number: str, response: Optional[PhoneNumberInstance]
+    ) -> Dict[str, Any]:
+        """
+        Process Twilio API response and extract relevant fields.
+
+        :param phone_number: Phone number that was looked up
+        :param response: Twilio API response
+        :return: Dictionary of extracted fields
+        """
+        # Initialize result with default values
+        result: Dict[str, Any] = {
+            "phone_number_e164": phone_number,
+            "_last_lookup": now("UTC"),
+            "phone_number_national_format": None,
+            "calling_country_code": None,
+            "country_code": None,
+            "is_valid": None,
+            "validation_errors": None,
+            "caller_name": None,
+            "caller_type": None,
+            "_error_code_caller": None,
+            "phone_type": None,
+            "carrier_name": None,
+            "mobile_country_code": None,
+            "mobile_network_code": None,
+            "_error_code_line_type": None,
+        }
+
+        if not response:
+            return result
+
+        # Extract basic phone number info - simplified getattr usage
+        for field_name, attr_name in [
+            ("phone_number_national_format", "national_format"),
+            ("calling_country_code", "calling_country_code"),
+            ("country_code", "country_code"),
+            ("is_valid", "valid"),
+        ]:
+            result[field_name] = getattr(response, attr_name, None)
+
+        # Validation errors
+        validation_errors: Optional[List] = getattr(response, "validation_errors", None)
+        if validation_errors:
+            logger.warning(f"Validation errors for {phone_number}: {validation_errors}")
+            result["validation_errors"] = validation_errors
+
+        # Caller name details
+        caller_details = getattr(response, "caller_name", None)
+        if caller_details:
+            result["caller_name"] = caller_details.get("caller_name")
+            result["caller_type"] = caller_details.get("caller_type")
+            error_code = caller_details.get("error_code")
+            if error_code:
+                logger.warning(f"Caller error code for {phone_number}: {error_code}")
+            result["_error_code_caller"] = error_code
+
+        # Line type intelligence
+        line_details = getattr(response, "line_type_intelligence", None)
+        if line_details:
+            result["phone_type"] = line_details.get("type")
+            result["carrier_name"] = line_details.get("carrier_name")
+            result["mobile_country_code"] = line_details.get("mobile_country_code")
+            result["mobile_network_code"] = line_details.get("mobile_network_code")
+            error_code = line_details.get("error_code")
+            if error_code:
+                logger.warning(f"Line type error code for {phone_number}: {error_code}")
+            result["_error_code_line_type"] = error_code
+
+        return result
 
     def fetch_and_lookup_numbers(self) -> None:
         """
         Fetches a dataframe of phone numbers with reverse lookup fields, populates
         the lookup fields via the Twilio API, writes them to a new update table,
-        then merges the update table with the reverse lookup table
+        then merges the update table with the reverse lookup table.
+
         :return: None
+        :raises AirflowException: If critical errors occur during processing
         """
+        start_time: float = time.time()
+
+        # Initialize clients and connections
+        twilio_client: Client = self._get_twilio_client()
+        snowflake_hook: SnowflakeHook = self._get_snowflake_hook()
+
+        # Fetch numbers needing lookup
         df: DataFrame = self.fetch_numbers_to_look_up()
         if df.empty:
             logger.info("All phone numbers already have current lookup information")
             return
-        run_folder = now("UTC").format("YYYYMMDD_HHmmss")
 
-        global twilio_client, twilio_fields
+        logger.info(f"Starting reverse lookups for {len(df)} phone numbers")
+
+        # Process lookups using batch approach
+        lookup_results: List[Dict[str, Any]] = []
+        success_count: int = 0
+        failure_count: int = 0
+        failed_numbers: List[str] = []
+
         for index in df.index:
-            phone_number_to_look_up: str = df.at[index, "phone_number_e164"]
-            # noinspection PyRedundantParentheses
-            if last_lookup := df.at[index, "_last_lookup"]:
-                last_verified_date: str = instance(last_lookup).format("YYYYMMDD")
+            phone_number: str = str(df.at[index, "phone_number_e164"])
+            last_lookup = df.at[index, "_last_lookup"]
+
+            # Perform lookup
+            response: Optional[PhoneNumberInstance] = self.perform_twilio_lookup(
+                twilio_client, phone_number, last_lookup
+            )
+
+            # Process response
+            result: Dict[str, Any] = self.process_lookup_response(
+                phone_number, response
+            )
+            lookup_results.append(result)
+
+            if response:
+                success_count += 1
             else:
-                last_verified_date: str = "19700101"
-            response: PhoneNumberInstance = twilio_client.lookups.v2.phone_numbers(
-                phone_number_to_look_up
-            ).fetch(
-                fields=",".join(twilio_fields), last_verified_date=last_verified_date
-            )
-            df.at[index, "_last_lookup"] = today("UTC")
-            df.at[index, "phone_number_e164"] = phone_number_to_look_up
-            df.at[index, "phone_number_national_format"] = getattr(
-                response, "national_format"
-            )
-            df.at[index, "calling_country_code"] = getattr(
-                response, "calling_country_code"
-            )
-            df.at[index, "country_code"] = getattr(response, "country_code")
-            df.at[index, "is_valid"] = getattr(response, "valid")
-            validation_errors: List = getattr(response, "validation_errors")
+                failure_count += 1
+                failed_numbers.append(phone_number)
 
-            record = {
-                "phone_number": phone_number_to_look_up,
-                "caller_name": getattr(response, "caller_name", None),
-                "phone_number_national_format": getattr(response, "national_format"),
-                "_last_lookup": today("UTC").format("YYYY-MM-DD"),
-            }
-            self._upload_lookup_to_s3(record, run_folder, phone_number_to_look_up)
-            if validation_errors:
-                logger.warning("Validation errors: %s", validation_errors)
-                df.at[index, "validation_errors"] = validation_errors
-            else:
-                df.at[index, "validation_errors"] = None
+            # Small delay to avoid hitting rate limits
+            if index < len(df) - 1:  # Don't delay after last item
+                time.sleep(TWILIO_API_DELAY_SECONDS)
 
-            if caller_details := getattr(response, "caller_name"):
-                df.at[index, "caller_name"] = caller_details.get("caller_name")
-                df.at[index, "caller_type"] = caller_details.get("caller_type")
-                # noinspection PyRedundantParentheses
-                if error_code := caller_details.get("error_code"):
-                    logger.warning("Caller error code: %d", error_code)
-                df.at[index, "_error_code_caller"] = error_code
-
-            if line_details := getattr(response, "line_type_intelligence"):
-                df.at[index, "phone_type"] = line_details.get("type")
-                df.at[index, "carrier_name"] = line_details.get("carrier_name")
-                df.at[index, "mobile_country_code"] = line_details.get(
-                    "mobile_country_code"
-                )
-                df.at[index, "mobile_network_code"] = line_details.get(
-                    "mobile_network_code"
-                )
-                # noinspection PyRedundantParentheses
-                if error_code := line_details.get("error_code"):
-                    logger.warning("Line type error code: %d", error_code)
-                df.at[index, "_error_code_line_type"] = error_code
-
-        df["_airfloaded_at"] = now("UTC")
-        df.columns = df.columns.str.upper()
-        suffix: str = "_UPDATES"
-
-        merge_query: str = self._build_merge_query(suffix)
-        dataframe_to_snowflake(
-            df,
-            database_name=RAW_DATABASE_NAME,
-            schema_name=RAW_SCHEMA_NAME,
-            table_name=f"{RAW_TABLE_NAME}{suffix}",
-            overwrite=True,
-            snowflake_connection=snowflake_connection,
+        # Log results
+        elapsed_time: float = time.time() - start_time
+        logger.info(
+            f"Completed {success_count} successful lookups, {failure_count} failures "
+            f"in {elapsed_time:.2f} seconds"
         )
-        snowflake_connection.cursor().execute(merge_query)
+
+        if failed_numbers:
+            num_to_log = min(len(failed_numbers), MAX_FAILED_NUMBERS_TO_LOG)
+            logger.warning(
+                f"Failed lookups for {len(failed_numbers)} numbers. "
+                f"First {num_to_log}: {failed_numbers[:num_to_log]}"
+            )
+
+        # Convert results to DataFrame
+        results_df: DataFrame = DataFrame(lookup_results)
+        results_df["_airfloaded_at"] = now("UTC")
+        results_df.columns = results_df.columns.str.upper()
+
+        # Check if we have any successful results to write
+        if success_count == 0:
+            logger.warning(
+                "All lookups failed! No data will be written to Snowflake. "
+                "Please investigate the failures."
+            )
+            raise AirflowException(
+                "All Twilio lookups failed - aborting to prevent data loss"
+            )
+
+        # Write to Snowflake with proper resource management
+        suffix: str = "_UPDATES"
+        update_table_name: str = f"{RAW_TABLE_NAME}{suffix}"
+
+        if ENVIRONMENT_FLAG == "prod":
+            try:
+                with snowflake_hook.get_conn() as snowflake_connection:
+                    # Write updates table
+                    dataframe_to_snowflake(
+                        results_df,
+                        database_name=RAW_DATABASE_NAME,
+                        schema_name=RAW_SCHEMA_NAME,
+                        table_name=update_table_name,
+                        overwrite=True,
+                        snowflake_connection=snowflake_connection,
+                    )
+
+                    # Merge updates into main table
+                    merge_query: str = self._build_merge_query(suffix)
+                    logger.info(f"Executing merge query: {merge_query}")
+                    cursor = snowflake_connection.cursor()
+                    try:
+                        cursor.execute(merge_query)
+                        logger.info(
+                            f"Successfully merged {len(results_df)} records into {RAW_TABLE_NAME}"
+                        )
+                    finally:
+                        cursor.close()
+
+            except Exception as e:
+                logger.error(f"Failed to write to Snowflake: {e}")
+                raise AirflowException(f"Snowflake operation failed: {e}")
+
+        else:  # If staging...
+            logger.info(
+                "Skipping Snowflake write/merge since ENVIRONMENT_FLAG is not 'prod'.  Displaying top results:"
+            )
+            logger.info(results_df.head())
 
     def execute(self, context: dict[str, Any]) -> None:
         """Execute the Twilio lookup operator."""
@@ -352,5 +404,6 @@ class TwilioLookupOperator(BaseOperator):
 
         if self.write_to_snowflake:
             self.fetch_and_lookup_numbers()
+
         else:
             logger.info("write_to_snowflake is False. Skipping data write.")

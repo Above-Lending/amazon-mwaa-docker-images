@@ -9,10 +9,10 @@ from typing import Dict
 from pandas import DataFrame
 
 from airflow.decorators import dag, task
-from airflow.models import Variable
+from airflow.sdk import Variable
 from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
-from pendulum import datetime, duration, now, DateTime
+from pendulum import datetime, duration, now
 
 from above.common.constants import (
     ENVIRONMENT_FLAG,
@@ -26,10 +26,14 @@ from above.common.snowflake_utils import snowflake_query_to_pandas_dataframe
 
 logger: logging.Logger = logging.getLogger(__name__)
 THIS_FILENAME: str = str(os.path.basename(__file__).replace(".py", ""))
-DAG_START_DATE: DateTime = datetime(2025, 9, 16, tz="UTC")
+DAG_START_DATE: datetime = datetime(2025, 9, 16, tz="UTC")
 
-GDS_CREDENTIALS: Dict = json.loads(Variable.get("gds"))
-AUDIT_LOG_AUTH_TOKEN = GDS_CREDENTIALS.get("audit_log_auth_token")
+# Lazy load to avoid Variable.get() at import time
+def get_gds_credentials():
+    return json.loads(Variable.get("gds"))
+
+def get_audit_log_auth_token():
+    return get_gds_credentials().get("audit_log_auth_token")
 
 S3_SOURCE_DIR = "sources/GDSCaseCenter/audit_logs/"
 CASECENTER_HISTORY_API_URL = "https://casecenter-above-lending-prod.dataview360.com/Above_Lending/above_lending/records/history.json"
@@ -37,7 +41,7 @@ DAYS_SINCE_APPLICATION_CREATION = 1600
 API_BATCH_SIZE = 500  # Adjust based on memory and API limits
 SLEEP_TIMEOUT = 0.01  # To avoid hitting API rate limits or API exhaustion.
 
-DEV_TESTING_COUNT = 200  # Number of records to process in non-prod envs for testing.
+DEV_TESTING_COUNT = 20  # Number of records to process in non-prod envs for testing.
 
 
 @task
@@ -139,7 +143,7 @@ def get_application_audit_log(request_id: str) -> bool:
         url = (
             f'{CASECENTER_HISTORY_API_URL}?query={{"system.record_id":"{request_id}"}}'
         )
-        headers = {"auth_token": f"{AUDIT_LOG_AUTH_TOKEN}"}
+        headers = {"auth_token": f"{get_audit_log_auth_token()}"}
 
         resp = requests.post(url, headers=headers, timeout=600)
         resp.raise_for_status()

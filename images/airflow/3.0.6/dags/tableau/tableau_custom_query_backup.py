@@ -1,16 +1,9 @@
-import glob
 import logging
 import os
-import re
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, List
-from zipfile import ZipFile
+from typing import TYPE_CHECKING
 
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from bs4 import BeautifulSoup
 from pendulum import datetime, duration, now, instance, DateTime
 
 from above.common.constants import (
@@ -19,10 +12,10 @@ from above.common.constants import (
     TABLEAU_CUSTOM_QUERY_BUCKET_DIRECTORY,
 )
 from tableau.utils.tableau_utils import get_tableau_dag_default_args
-from above.common.utils import copy_file_to_s3
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.service_resource import Bucket, ObjectSummary
+    from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
 logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
@@ -39,6 +32,11 @@ def extract_custom_queries_from_twb_file(twb_file_path: str) -> str:
     :param twb_file_path: Path to the .twb file
     :return: Concatenated custom queries found in the file
     """
+    # Lazy import, we only load this when the function is called.
+    import re
+    from bs4 import BeautifulSoup
+    from typing import List
+
     try:
         with open(twb_file_path, "r") as xml:
             soup = BeautifulSoup(xml.read(), "html.parser")
@@ -62,7 +60,7 @@ def extract_custom_queries_from_twb_file(twb_file_path: str) -> str:
     return QUERY_SEPARATION_STR.join(queries)
 
 
-def extract_custom_queries_from_twb_files(twb_file_paths: List[str]) -> str:
+def extract_custom_queries_from_twb_files(twb_file_paths: list[str]) -> str:
     """
     Extract custom queries from multiple TWB files and concatenate them.
 
@@ -76,7 +74,7 @@ def extract_custom_queries_from_twb_files(twb_file_paths: List[str]) -> str:
 
 
 def process_workbook_file(
-    s3_hook: S3Hook, workbook_key: str, bucket_name: str, tmp_dir: str
+    s3_hook: "S3Hook", workbook_key: str, bucket_name: str, tmp_dir: str
 ) -> None:
     """
     Process a single Tableau workbook file to extract and save custom queries.
@@ -86,6 +84,12 @@ def process_workbook_file(
     :param bucket_name: S3 bucket name
     :param tmp_dir: Temporary directory path for file processing
     """
+    # Lazy imports - only load when function is called
+    import glob
+    from pathlib import Path
+    from zipfile import ZipFile
+    from above.common.utils import copy_file_to_s3
+
     try:
         # Download file from S3
         file_path = s3_hook.download_file(
@@ -104,7 +108,7 @@ def process_workbook_file(
                 zip_ref.extractall(tmp_dir)
 
         # Find all .twb files (could be multiple in a .twbx)
-        twb_file_paths: List[str] = glob.glob(f"{tmp_dir}/*.twb")
+        twb_file_paths: list[str] = glob.glob(f"{tmp_dir}/*.twb")
 
         if not twb_file_paths:
             logger.warning(f"No .twb files found in {workbook_key}")
@@ -146,17 +150,21 @@ def backup_custom_tableau_queries() -> None:
     Scans S3 for Tableau workbook files (.twb/.twbx) modified in the last 24 hours,
     extracts custom SQL queries, and saves them as separate .sql files in S3.
     """
+    # Lazy imports, only load when function is called.
+    from tempfile import TemporaryDirectory
+    from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+
     modified_after: DateTime = now(tz="UTC") - duration(days=1)
 
     try:
         s3_hook: S3Hook = S3Hook(aws_conn_id=None)
-        s3_bucket: Bucket = s3_hook.get_bucket(bucket_name=S3_DATALAKE_BUCKET)
+        s3_bucket: "Bucket" = s3_hook.get_bucket(bucket_name=S3_DATALAKE_BUCKET)
     except Exception as e:
         logger.error(f"Failed to connect to S3: {e}")
         raise AirflowException(f"Failed to connect to S3: {e}")
 
     # Find workbooks modified after the specified date
-    workbook_object_summaries: List[ObjectSummary] = [
+    workbook_object_summaries: list["ObjectSummary"] = [
         obj
         for obj in s3_bucket.objects.filter(Prefix=TABLEAU_BACKUP_BUCKET_DIRECTORY)
         if obj.key.endswith((".twb", ".twbx"))
@@ -190,7 +198,7 @@ def backup_custom_tableau_queries() -> None:
     start_date=dag_start_date,
     max_active_runs=1,
     catchup=False,
-    default_args=get_tableau_dag_default_args(dag_start_date),
+    default_args=get_tableau_dag_default_args(),
 )
 def tableau_custom_query_backup() -> None:
     """

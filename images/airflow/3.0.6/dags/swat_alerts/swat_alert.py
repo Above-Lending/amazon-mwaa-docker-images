@@ -13,9 +13,7 @@ from airflow import DAG
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from airflow.models import DagModel
-from airflow.utils.session import create_session
-from airflow.models import Variable
+from airflow.sdk import Variable
 from pandas import DataFrame
 from pendulum import datetime, now
 import uuid
@@ -27,8 +25,12 @@ from above.common.constants import (SNOWFLAKE_CONN_ID, SNOWFLAKE_SWAT_VIEWS,
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-# Slack settings
-SLACK_TOKEN = json.loads(Variable.get("SLACK_TOKEN"))["token"] 
+# Lazy load Slack token to avoid Variable.get() at import time
+def get_slack_token():
+    return json.loads(Variable.get("SLACK_TOKEN"))["token"]
+
+def get_slack_client():
+    return WebClient(token=get_slack_token(), timeout=DEFAULT_TIMEOUT)
 
 DEFAULT_TIMEOUT: int = 15
 OUTPUT_DIRECTORY = "/tmp"
@@ -57,8 +59,6 @@ CHANNELS = {
     "logs-payments":                 "C04SA0HMDR7",
     "logs-servicing":                "C0A358R95DF"
 }
-
-slack_client = WebClient(token=SLACK_TOKEN, timeout=DEFAULT_TIMEOUT)
 
 def log_error(msg: str, job: str = "") -> None:
     if ENVIRONMENT_FLAG == "prod":
@@ -125,6 +125,7 @@ def send_slack_message(chan: str, title: str, message: str = "") -> None:
         channel = DEV_CHANNEL
     try:
         logger.info(f"Posting message in {channel}")
+        slack_client = get_slack_client()
         response = slack_client.chat_postMessage(channel=channel, text=f"{text}")
         logger.debug(f"postMessage response: {response}")
     except SlackApiError as error:
@@ -140,6 +141,7 @@ def send_slack_file(chan: str, filename: str, file_path: str, message: str) -> N
 
     try:
         sleep(1)
+        slack_client = get_slack_client()
         response = slack_client.files_upload_v2(
             file=file_path,
             title=filename,
@@ -176,7 +178,7 @@ def log_to_snowflake_hist(schema: str, job_name: str, df):
         return
     try:
         snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-        completed_at = pendulum.now("America/Chicago").to_datetime_string()
+        completed_at = pendulum.now("America/Chicago")
         job_run_uuid = str(uuid.uuid4())
         alert_key = f"{schema.upper()}::{job_name.upper()}"
         
@@ -439,7 +441,8 @@ def alert_dag():
             globals()[dag.__name__] = dag()
             dynamic_dag_ids.append(dag().dag_id)
 
-    # Note: DagModel database access is not allowed in Airflow 3.0
-    # The paused DAG check has been removed. Monitor DAG states via the UI or API instead.
+    # Note: Checking for paused DAGs via DagModel.get_current() is not allowed in Airflow 3.x
+    # This check has been removed. Use the Airflow UI or CLI to monitor paused DAGs instead.
+    # Previous behavior: Would log an error if any dynamic DAGs were paused in production
 
 alert_dag()

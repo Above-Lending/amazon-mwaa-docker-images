@@ -6,7 +6,7 @@ from textwrap import dedent
 from typing import Any, Dict, List, Tuple
 
 from airflow.decorators import dag, task
-from airflow.models import Variable
+from airflow.sdk import Variable
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.exceptions import AirflowFailException
 from pandas import DataFrame, concat
@@ -18,7 +18,7 @@ from sqlalchemy.exc import ProgrammingError
 from trustpilot import client
 
 from above.common.constants import RAW_DATABASE_NAME, SNOWFLAKE_CONN_ID
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.slack_alert import task_failure_slack_alert
 from above.common.snowflake_utils import (
     dataframe_to_snowflake,
     query_to_dataframe
@@ -229,7 +229,7 @@ def get_consumer_profiles():
         retries=0,
         retry_delay=timedelta(minutes=10),
         execution_timeout=timedelta(minutes=60),
-        on_failure_callback=task_failure_slack_alert_hook
+        on_failure_callback=task_failure_slack_alert
     )
 )
 

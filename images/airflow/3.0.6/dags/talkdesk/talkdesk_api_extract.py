@@ -19,7 +19,7 @@ from above.common.constants import (
     DATALAKE_ERROR_DIR, DATALAKE_PREPROCESSED_DIR, DATALAKE_SOURCE_ARCHIVE_DIR,
     DATALAKE_SOURCE_DIR, DATALAKE_SUCCESS_DIR, S3_CONN_ID, S3_DATALAKE_BUCKET
 )
-from above.common.slack_alert import task_failure_slack_alert_hook
+from above.common.slack_alert import task_failure_slack_alert
 from talkdesk.common.talkdesk import get_talkdesk_api_auth_token
 from above.common.utils import put_df_to_s3_bucket_name
 from above.operators.preprocess_files_operator import (
@@ -146,7 +146,7 @@ with DAG(
             retries=3,
             retry_delay=timedelta(minutes=45),
             execution_timeout=timedelta(minutes=9),
-            on_failure_callback=task_failure_slack_alert_hook
+            on_failure_callback=task_failure_slack_alert
         )
 ) as dag:
 
@@ -156,7 +156,6 @@ with DAG(
         s3_in_bucket=S3_DATALAKE_BUCKET,
         s3_source_dir=S3_SOURCE_DIR,
         s3_source_archive_dir=S3_SOURCE_ARCHIVE_DIR,
-        dag=dag
     )
 
     preprocess = PreprocessFilesOperator(
@@ -169,13 +168,11 @@ with DAG(
         s3_error_dir=S3_ERROR_DIR,
         s3_success_dir=S3_SUCCESS_DIR,
         file_parsing_args={"sep": ","},
-        dag=dag
     )
 
     trigger_load_dag = TriggerDagRunOperator(
         task_id="trigger_dag_{}_load".format(DATA_SOURCE),
         trigger_dag_id="{}_load".format(DATA_SOURCE),
-        dag=dag
     )
 
     chain(
