@@ -17,6 +17,17 @@ from airflow.exceptions import AirflowFailException
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+# Enable debug logging for write_pandas function
+snowflake_pandas_logger = logging.getLogger("snowflake.connector.pandas_tools")
+snowflake_pandas_logger.setLevel(logging.DEBUG)
+# Add a handler to ensure debug messages are actually output
+if not snowflake_pandas_logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    snowflake_pandas_logger.addHandler(handler)
+
 
 # DEPRECATED.
 def get_file_format_function(file_format: str) -> Callable:
@@ -143,21 +154,31 @@ def dataframe_to_snowflake(
         snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
         snowflake_connection = snowflake_hook.get_conn()
 
-    success, number_of_chunks, number_of_rows, _ = write_pandas(
-        snowflake_connection,
-        dataframe,
-        table_name,
-        database=database_name,
-        schema=schema_name,
-        auto_create_table=True,
-        quote_identifiers=True,
-        use_logical_type=True,
-        overwrite=overwrite,
+    logger.info(
+        f"Writing DataFrame to Snowflake table "
+        f"{database_name}.{schema_name}.{table_name}..."
+        f"with connection_id {SNOWFLAKE_CONN_ID}."
     )
-    if success:
-        logger.info("%d row(s) written", number_of_rows)
-    else:
-        logger.error("write_pandas unsuccessful for %s", table_name)
+    try:
+        success, number_of_chunks, number_of_rows, _ = write_pandas(
+            snowflake_connection,
+            dataframe,
+            table_name,
+            database=database_name,
+            schema=schema_name,
+            auto_create_table=True,
+            quote_identifiers=True,
+            use_logical_type=True,
+            overwrite=overwrite,
+        )
+        if success:
+            logger.info("%d row(s) written", number_of_rows)
+        else:
+            logger.error("write_pandas unsuccessful for %s", table_name)
+    except Exception as e:
+        logger.error(f"Error writing DataFrame to Snowflake table {database_name}.{schema_name}.{table_name}: {e}")
+        raise AirflowFailException()
+
     return success, number_of_rows
 
 

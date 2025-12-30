@@ -746,8 +746,11 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
     """
     snowflake_connection = get_snowflake_connection()
 
-    start_date_string = '2025-12-15'
-    end_date_string = '2025-12-16'
+    end_date = date.today()
+    start_date = end_date - timedelta(days=1)
+
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
 
     report_params = {
         "Token": TOKEN,
@@ -959,8 +962,11 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
     """
     snowflake_connection = get_snowflake_connection()
 
-    start_date_string = '2025-12-15'
-    end_date_string = '2025-12-16'
+    end_date = date.today()
+    start_date = end_date - timedelta(days=1)
+
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
 
     report_params = {
         "Token": TOKEN,
@@ -1172,8 +1178,11 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
     """
     snowflake_connection = get_snowflake_connection()
 
-    start_date_string = '2025-12-15'
-    end_date_string = '2025-12-16'
+    end_date = date.today()
+    start_date = end_date - timedelta(days=1)
+
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
 
     report_params = {
         "Token": TOKEN,
@@ -1385,8 +1394,11 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
     """
     snowflake_connection = get_snowflake_connection()
 
-    start_date_string = '2025-12-15'
-    end_date_string = '2025-12-16'
+    end_date = date.today()
+    start_date = end_date - timedelta(days=1)
+
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
 
     report_params = {
         "Token": TOKEN,
@@ -1580,8 +1592,11 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
     """
     snowflake_connection = get_snowflake_connection()
 
-    start_date_string = '2025-12-15'
-    end_date_string = '2025-12-16'
+    end_date = date.today()
+    start_date = end_date - timedelta(days=1)
+
+    start_date_string = start_date.strftime("%Y-%m-%d")
+    end_date_string = end_date.strftime("%Y-%m-%d")
 
     report_params = {
         "Token": TOKEN,
