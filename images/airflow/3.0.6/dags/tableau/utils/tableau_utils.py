@@ -12,13 +12,6 @@ from airflow.exceptions import AirflowException
 from airflow.models import Variable
 from pendulum import duration
 
-from above.common.constants import (
-    ENVIRONMENT_FLAG,
-    S3_CONN_ID,
-    S3_DATALAKE_BUCKET,
-    TABLEAU_SERVER_URL,
-    TABLEAU_SITE_ID,
-)
 from above.common.slack_alert import task_failure_slack_alert
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -50,6 +43,9 @@ def get_tableau_dag_default_args() -> dict[str, Any]:
 
     :return: Dictionary of default arguments
     """
+    # Import here to avoid triggering Variable.get() at module import time
+    from above.common.constants import ENVIRONMENT_FLAG
+    
     return dict(
         owner="Data Engineering",
         depends_on_past=False,

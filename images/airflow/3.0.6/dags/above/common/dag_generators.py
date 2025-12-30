@@ -4,7 +4,7 @@ import os
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from airflow.providers.snowflake.operators.snowflake import SnowflakeSqlApiOperator
 
 from above.operators.snowflake_json_table_to_relational import \
     SnowflakeJsonTableToRelational
@@ -62,7 +62,7 @@ def load_raw_from_s3(
     )
 
     with dag:
-        init = SnowflakeOperator(
+        init = SnowflakeSqlApiOperator(
             task_id='init',
             snowflake_conn_id=snowflake_conn_id,
             sql='init_json.sql',

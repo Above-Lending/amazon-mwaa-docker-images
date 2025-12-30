@@ -25,9 +25,28 @@ from above.common.snowflake_utils import query_to_dataframe
 logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
-snowflake_connection = snowflake_hook.get_conn()
+# Lazy initialization to avoid DB connections at import time
+_snowflake_hook = None
+_sql_engine = None
+_snowflake_connection = None
+
+def get_snowflake_hook():
+    global _snowflake_hook
+    if _snowflake_hook is None:
+        _snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+    return _snowflake_hook
+
+def get_sql_engine():
+    global _sql_engine
+    if _sql_engine is None:
+        _sql_engine = get_snowflake_hook().get_sqlalchemy_engine()
+    return _sql_engine
+
+def get_snowflake_connection():
+    global _snowflake_connection
+    if _snowflake_connection is None:
+        _snowflake_connection = get_snowflake_hook().get_conn()
+    return _snowflake_connection
 
 database_schema: str = "SBT"
 temp_table_suffix: str = "_TEMP"
@@ -36,8 +55,13 @@ default_page_size: int = 1000  # API default is 10
 TOKEN_EXPIRATION_IN_SECONDS: int = 30 * 60  # 30 minutes
 api_date_format: str = "MM/DD/YYYY HH:mm:ss"
 api_start_date: datetime = datetime(2023, 5, 1, tz='UTC')
-brands: List = json.loads(Variable.get("sbt_brands"))
-groups: List = json.loads(Variable.get("sbt_groups"))
+
+# Lazy load these to avoid Variable.get() at import time
+def get_brands():
+    return json.loads(Variable.get("sbt_brands"))
+
+def get_groups():
+    return json.loads(Variable.get("sbt_groups"))
 
 
 def _set_access_token() -> Tuple[str, DateTime]:
@@ -69,7 +93,7 @@ def _set_access_token() -> Tuple[str, DateTime]:
             access_token[:10], expires_at
         )
         Variable.set("sbt_access_token", access_token)
-        Variable.set("sbt_access_expires_at", expires_at)
+        Variable.set("sbt_access_expires_at", str(expires_at))
     else:
         logger.error("HTTP %d %s", response.status_code, response.reason)
         raise ValueError("Unable to get SBT access token")
@@ -214,6 +238,7 @@ def write_pandas_to_database(
     :return: success flag, number of rows written
     """
     global database_schema
+    snowflake_connection = get_snowflake_connection()
     success, number_of_chunks, number_of_rows, _ = write_pandas(
         snowflake_connection, dataframe, table_name,
         database=RAW_DATABASE_NAME, schema=database_schema,
@@ -259,7 +284,7 @@ def get_subscribers() -> None:
     temp_table_name: str = f"{table_name}{temp_table_suffix}"
     drop_table(temp_table_name)
 
-    for group in groups:
+    for group in get_groups():
         page_number: int = 1
         df: DataFrame = DataFrame()
         while True:  # page-level loop
@@ -326,7 +351,7 @@ def get_templates():
     temp_table_name: str = f"{table_name}{temp_table_suffix}"
     drop_table(table_name=temp_table_name)
 
-    for group in groups:
+    for group in get_groups():
         page_number: int = 1
         df: DataFrame = DataFrame()
         while True:  # page-level loop
@@ -372,7 +397,7 @@ def get_shorturl_clicks():
     temp_table_name: str = f"{table_name}{temp_table_suffix}"
     drop_table(temp_table_name)
 
-    for brand in brands:
+    for brand in get_brands():
         page_number: int = 1
         df: DataFrame = DataFrame()
         while True:  # page-level loop
@@ -421,7 +446,7 @@ def get_shorturl_click_details():
     request_time: DateTime = now("UTC")
     download_dates: interval = interval(data_start_at, request_time)
 
-    for brand in brands:
+    for brand in get_brands():
         df: DataFrame = DataFrame()
         for download_date in download_dates:
             from_date: str = download_date.format(api_date_format)
@@ -480,7 +505,7 @@ def get_inbound_messages():
     request_time: DateTime = now("UTC")
     download_dates: interval = interval(data_start_at, request_time)
 
-    for group in groups:
+    for group in get_groups():
         df: DataFrame = DataFrame()
         for download_date in download_dates:
             from_date: str = download_date.format(api_date_format)
@@ -543,7 +568,7 @@ def get_outbound_messages():
     request_time: DateTime = now("UTC")
     download_dates: interval = interval(data_start_at, request_time)
 
-    for group in groups:
+    for group in get_groups():
         df: DataFrame = DataFrame()
         for download_date in download_dates:
             from_date: str = download_date.format(api_date_format)
