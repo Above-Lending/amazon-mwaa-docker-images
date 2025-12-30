@@ -7,7 +7,7 @@ import os
 
 import pandas as pd
 from airflow.exceptions import AirflowException
-from airflow.models import Variable
+from airflow.sdk import Variable
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from mypy_boto3_s3.service_resource import Bucket
 

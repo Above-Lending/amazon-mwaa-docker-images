@@ -6,7 +6,7 @@ import os
 from typing import Any, Dict
 
 from airflow.exceptions import AirflowException
-from airflow.models import Variable
+from airflow.sdk import Variable
 from jinja2 import Template
 from twilio.rest import Client
 

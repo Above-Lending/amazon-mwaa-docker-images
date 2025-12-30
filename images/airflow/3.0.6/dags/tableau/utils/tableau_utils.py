@@ -9,7 +9,7 @@ import logging
 from typing import Any, Dict
 
 from airflow.exceptions import AirflowException
-from airflow.models import Variable
+from airflow.sdk import Variable
 from pendulum import duration
 
 from above.common.slack_alert import task_failure_slack_alert

@@ -9,7 +9,7 @@ from typing import Dict
 from pandas import DataFrame
 
 from airflow.decorators import dag, task
-from airflow.models import Variable
+from airflow.sdk import Variable
 from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
 from pendulum import datetime, duration, now

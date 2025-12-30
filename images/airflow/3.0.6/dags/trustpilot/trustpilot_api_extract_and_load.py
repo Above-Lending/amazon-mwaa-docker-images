@@ -6,7 +6,7 @@ from textwrap import dedent
 from typing import Any, Dict, List, Tuple
 
 from airflow.decorators import dag, task
-from airflow.models import Variable
+from airflow.sdk import Variable
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.exceptions import AirflowFailException
 from pandas import DataFrame, concat

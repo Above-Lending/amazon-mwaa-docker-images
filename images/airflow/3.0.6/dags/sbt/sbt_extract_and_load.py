@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 import requests
 from airflow.decorators import dag, task
-from airflow.models import Variable
+from airflow.sdk import Variable
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from numpy import NaN
 from pandas import DataFrame, concat
@@ -107,8 +107,8 @@ def get_access_token() -> str:
     a new one and returns it.
     :return: a valid access token
     """
-    access_token: str = Variable.get("sbt_access_token", default_var=None)
-    expires_at: str = Variable.get("sbt_access_expires_at", default_var=None)
+    access_token: str = Variable.get("sbt_access_token", default=None)
+    expires_at: str = Variable.get("sbt_access_expires_at", default=None)
     five_minutes_remaining: DateTime = now() + duration(seconds=300)
     if (
             access_token is None or

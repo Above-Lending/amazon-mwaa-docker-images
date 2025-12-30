@@ -1,11 +1,11 @@
 import os
 
 from airflow.configuration import conf
-from airflow.models import Variable
+from airflow.sdk import Variable
 
 # Lazy-load environment flag to avoid DB call at import time
 def _get_environment_flag() -> str:
-    return Variable.get("environment_flag", default_var="staging")
+    return Variable.get("environment_flag", default="staging")
 
 # DAGS_FOLDER = conf["core"]["dags_folder"] # KeyError with 2.10.1
 DAGS_FOLDER = "/usr/local/airflow/dags"

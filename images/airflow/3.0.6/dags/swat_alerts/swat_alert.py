@@ -13,7 +13,7 @@ from airflow import DAG
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from airflow.models import Variable
+from airflow.sdk import Variable
 from pandas import DataFrame
 from pendulum import datetime, now
 import uuid
