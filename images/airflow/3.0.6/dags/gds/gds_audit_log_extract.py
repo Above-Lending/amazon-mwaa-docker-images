@@ -14,11 +14,7 @@ from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
 from pendulum import datetime, duration, now
 
-from above.common.constants import (
-    ENVIRONMENT_FLAG,
-    S3_CONN_ID,
-    S3_DATAENGINEERING_BUCKET,
-)
+from above.common.constants import lazy_constants, S3_CONN_ID
 from above.common.check_memory_usage import check_memory_usage
 from above.common.s3_utils import gzip_json_and_upload_to_s3
 from above.common.slack_alert import task_failure_slack_alert_hook
@@ -61,7 +57,7 @@ def load_and_batch_application_data(
         # Check row count for this df in the context.
         context["ti"].xcom_push(key=f"row_count_{now().isoformat()}", value=len(df))
 
-        if ENVIRONMENT_FLAG != "prod":
+        if lazy_constants.ENVIRONMENT_FLAG != "prod":
             df = df.head(DEV_TESTING_COUNT)
             logger.info(
                 "Non-prod environment detected; limiting to 10 records for testing."
@@ -151,7 +147,7 @@ def get_application_audit_log(request_id: str) -> bool:
         audit_log_json = resp.json()
         gzip_json_and_upload_to_s3(
             json_data=audit_log_json,
-            s3_bucket=S3_DATAENGINEERING_BUCKET,
+            s3_bucket=lazy_constants.S3_DATAENGINEERING_BUCKET,
             s3_key=os.path.join(S3_SOURCE_DIR, f"{request_id}.json.gz"),
             aws_conn_id=S3_CONN_ID,
         )

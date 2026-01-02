@@ -10,7 +10,7 @@ from airflow.decorators import dag
 from pendulum import datetime, duration
 
 from above.common.slack_alert import task_failure_slack_alert
-from above.common.constants import ENVIRONMENT_FLAG
+from above.common.constants import lazy_constants
 from twilio_communications.operators.twilio_lookup_operator import TwilioLookupOperator
 
 # Constants
@@ -33,7 +33,7 @@ DAG_START_DATE = datetime(2024, 6, 1, tz="UTC")
         "retry_delay": duration(minutes=10),
         "execution_timeout": duration(minutes=60),
         "on_failure_callback": (
-            task_failure_slack_alert if ENVIRONMENT_FLAG == "prod" else None
+            task_failure_slack_alert if lazy_constants.ENVIRONMENT_FLAG == "prod" else None
         ),
     },
 )

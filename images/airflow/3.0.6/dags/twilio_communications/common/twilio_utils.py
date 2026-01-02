@@ -10,15 +10,20 @@ from airflow.sdk import Variable
 from jinja2 import Template
 from twilio.rest import Client
 
-from above.common.constants import ENVIRONMENT_FLAG
+from above.common.constants import lazy_constants
 
 logger = logging.getLogger(__name__)
 
 # Path to SQL files
 SQL_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sql")
 
+# Module-level default constants (avoid referencing lazy_constants at module level for conditional logic)
+def get_lookup_limit() -> int:
+    """Get the lookup limit based on environment."""
+    return 5000 if lazy_constants.ENVIRONMENT_FLAG == "prod" else 5
+
 # Constants
-LOOKUP_LIMIT: int = 5000 if ENVIRONMENT_FLAG == "prod" else 5  # Prevent costly runaways
+LOOKUP_LIMIT: int = 5000  # Default; override with get_lookup_limit() in production code
 LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this
 TWILIO_FIELDS: list[str] = ["caller_name", "line_type_intelligence"]
 RAW_SCHEMA_NAME: str = "TWILIO"

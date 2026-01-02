@@ -4,13 +4,7 @@ import os
 from airflow.decorators import dag
 from pendulum import datetime, DateTime
 
-from above.common.constants import (
-    S3_CONN_ID,
-    S3_DATALAKE_BUCKET,
-    TABLEAU_BACKUP_BUCKET_DIRECTORY,
-    TABLEAU_SERVER_URL,
-    TABLEAU_SITE_ID,
-)
+from above.common.constants import lazy_constants
 from tableau.utils.tableau_utils import get_tableau_dag_default_args
 from tableau.operators.tableau_operator import TableauOperator
 
@@ -43,11 +37,11 @@ def tableau_backup() -> None:
         task_id="backup_tableau_updated_recently",
         updated_since=r"{{ data_interval_start.subtract(hours=24)"
         + ".strftime('%Y-%m-%dT%H:%M:%SZ') }}",
-        site_id=TABLEAU_SITE_ID,
-        server_url=TABLEAU_SERVER_URL,
-        s3_bucket=S3_DATALAKE_BUCKET,
-        s3_directory=TABLEAU_BACKUP_BUCKET_DIRECTORY,
-        s3_conn_id=S3_CONN_ID,
+        site_id=lazy_constants.TABLEAU_SITE_ID,
+        server_url=lazy_constants.TABLEAU_SERVER_URL,
+        s3_bucket=lazy_constants.S3_DATALAKE_BUCKET,
+        s3_directory=lazy_constants.TABLEAU_BACKUP_BUCKET_DIRECTORY,
+        s3_conn_id=lazy_constants.S3_CONN_ID,
     )
 
     # Return the task (or use it in task dependencies)

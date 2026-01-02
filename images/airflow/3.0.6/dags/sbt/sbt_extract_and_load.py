@@ -18,7 +18,7 @@ from snowflake.connector.pandas_tools import write_pandas
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 
-from above.common.constants import RAW_DATABASE_NAME, SNOWFLAKE_CONN_ID
+from above.common.constants import lazy_constants
 from above.common.slack_alert import task_failure_slack_alert
 from above.common.snowflake_utils import query_to_dataframe
 
@@ -33,7 +33,7 @@ _snowflake_connection = None
 def get_snowflake_hook():
     global _snowflake_hook
     if _snowflake_hook is None:
-        _snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        _snowflake_hook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
     return _snowflake_hook
 
 def get_sql_engine():
@@ -131,7 +131,7 @@ def drop_table(table_name: str) -> None:
     logger.info("Dropping table %s", table_name)
     query: str = dedent(
         f"""
-        DROP TABLE IF EXISTS {RAW_DATABASE_NAME}.{database_schema}.{table_name};
+        DROP TABLE IF EXISTS {lazy_constants.RAW_DATABASE_NAME}.{database_schema}.{table_name};
         """
     )
     df: DataFrame = query_to_dataframe(query)
@@ -147,8 +147,8 @@ def rename_table(from_name: str, to_name: str) -> None:
     logger.info("Renaming table %s to %s", from_name, to_name)
     query: str = dedent(
         f"""
-        ALTER TABLE IF EXISTS {RAW_DATABASE_NAME}.{database_schema}.{from_name}
-        RENAME TO {RAW_DATABASE_NAME}.{database_schema}.{to_name};
+        ALTER TABLE IF EXISTS {lazy_constants.RAW_DATABASE_NAME}.{database_schema}.{from_name}
+        RENAME TO {lazy_constants.RAW_DATABASE_NAME}.{database_schema}.{to_name};
         """
     )
     df: DataFrame = query_to_dataframe(query)
@@ -182,7 +182,7 @@ def get_latest_timestamp_from_table(
                     MAX(TRY_TO_TIMESTAMP_TZ("{column_name}")), 
                     '2023-05-01T00:00:00Z'::TIMESTAMP_TZ
                ) AS latest_timestamp
-        FROM {RAW_DATABASE_NAME}.{database_schema}.{table_name}
+        FROM {lazy_constants.RAW_DATABASE_NAME}.{database_schema}.{table_name}
         """
     )
     global api_start_date
@@ -241,7 +241,7 @@ def write_pandas_to_database(
     snowflake_connection = get_snowflake_connection()
     success, number_of_chunks, number_of_rows, _ = write_pandas(
         snowflake_connection, dataframe, table_name,
-        database=RAW_DATABASE_NAME, schema=database_schema,
+        database=lazy_constants.RAW_DATABASE_NAME, schema=database_schema,
         auto_create_table=True, quote_identifiers=True,
         use_logical_type=True
     )

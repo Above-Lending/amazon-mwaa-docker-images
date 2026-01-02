@@ -12,7 +12,7 @@ from pandas import DataFrame
 from snowflake.connector import SnowflakeConnection
 from sqlalchemy.engine import Engine
 from snowflake.connector.pandas_tools import write_pandas
-from above.common.constants import SNOWFLAKE_CONN_ID
+from above.common.constants import lazy_constants
 from airflow.exceptions import AirflowFailException
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ def snowflake_query_to_pandas_dataframe(query: str, **context) -> DataFrame:
     """
     try:
         logger.info(f"Executing query:\n{query}")
-        snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook: SnowflakeHook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
         df = snowflake_hook.get_pandas_df(sql=query)
 
         print(f"Retrieved {len(df)} rows from Snowflake")
@@ -109,7 +109,7 @@ def query_to_dataframe(query: str, fail_on_empty_result: bool = False) -> DataFr
     """
     logger.info("Executing query:")
     logger.info(query)
-    snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+    snowflake_hook: SnowflakeHook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
     sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
     dataframe: DataFrame = pd.read_sql(query, sql_engine)
 
@@ -144,7 +144,7 @@ def dataframe_to_snowflake(
     :return: success flag, number of rows written
     """
     if snowflake_connection is None:
-        snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook: SnowflakeHook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
         snowflake_connection = snowflake_hook.get_conn()
 
     success, number_of_chunks, number_of_rows, _ = write_pandas(

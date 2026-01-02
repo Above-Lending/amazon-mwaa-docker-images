@@ -13,12 +13,7 @@ from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 from twilio.rest.lookups.v2.phone_number import PhoneNumberInstance
 
-from above.common.constants import (
-    RAW_DATABASE_NAME,
-    SNOWFLAKE_CONN_ID,
-    TRUSTED_DATABASE_NAME,
-    ENVIRONMENT_FLAG,
-)
+from above.common.constants import lazy_constants
 from above.common.snowflake_utils import dataframe_to_snowflake, query_to_dataframe
 from twilio_communications.common.twilio_utils import (
     get_twilio_client,
@@ -94,8 +89,8 @@ class TwilioLookupOperator(BaseOperator):
         :return: SQL query string
         """
         return build_active_numbers_query(
-            trusted_database=TRUSTED_DATABASE_NAME,
-            raw_database=RAW_DATABASE_NAME,
+            trusted_database=lazy_constants.TRUSTED_DATABASE_NAME,
+            raw_database=lazy_constants.RAW_DATABASE_NAME,
             raw_schema=self.raw_schema_name,
             raw_table=self.raw_table_name,
             lookup_refresh_months=self.lookup_refresh_months,
@@ -109,7 +104,7 @@ class TwilioLookupOperator(BaseOperator):
         :return: SQL MERGE statement
         """
         return build_merge_query(
-            raw_database=RAW_DATABASE_NAME,
+            raw_database=lazy_constants.RAW_DATABASE_NAME,
             raw_schema=self.raw_schema_name,
             raw_table=self.raw_table_name,
             suffix=suffix,
@@ -131,8 +126,8 @@ class TwilioLookupOperator(BaseOperator):
 
         :return: Configured SnowflakeHook
         """
-        hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-        hook.database = RAW_DATABASE_NAME
+        hook: SnowflakeHook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
+        hook.database = lazy_constants.RAW_DATABASE_NAME
         hook.schema = RAW_SCHEMA_NAME
         return hook
 
@@ -357,13 +352,13 @@ class TwilioLookupOperator(BaseOperator):
         suffix: str = "_UPDATES"
         update_table_name: str = f"{RAW_TABLE_NAME}{suffix}"
 
-        if ENVIRONMENT_FLAG == "prod":
+        if lazy_constants.ENVIRONMENT_FLAG == "prod":
             try:
                 with snowflake_hook.get_conn() as snowflake_connection:
                     # Write updates table
                     dataframe_to_snowflake(
                         results_df,
-                        database_name=RAW_DATABASE_NAME,
+                        database_name=lazy_constants.RAW_DATABASE_NAME,
                         schema_name=RAW_SCHEMA_NAME,
                         table_name=update_table_name,
                         overwrite=True,

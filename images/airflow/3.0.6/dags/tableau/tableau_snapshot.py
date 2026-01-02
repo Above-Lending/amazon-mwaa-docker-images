@@ -6,13 +6,7 @@ from pendulum import datetime, DateTime
 from airflow.decorators import dag
 from tableau.operators.tableau_operator import TableauOperator
 
-from above.common.constants import (
-    S3_CONN_ID,
-    S3_DATALAKE_BUCKET,
-    TABLEAU_SNAPSHOT_BUCKET_DIRECTORY,
-    TABLEAU_SERVER_URL,
-    TABLEAU_SITE_ID,
-)
+from above.common.constants import lazy_constants
 from tableau.utils.tableau_utils import get_tableau_dag_default_args
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -42,14 +36,14 @@ def tableau_snapshot() -> None:
     snapshot_task: TableauOperator = TableauOperator(
         task_id="snapshot_tableau",
         updated_since=r"{{ data_interval_start.subtract(years=10).strftime('%Y-%m-%dT%H:%M:%SZ') }}",
-        site_id=TABLEAU_SITE_ID,
-        server_url=TABLEAU_SERVER_URL,
-        s3_bucket=S3_DATALAKE_BUCKET,
+        site_id=lazy_constants.TABLEAU_SITE_ID,
+        server_url=lazy_constants.TABLEAU_SERVER_URL,
+        s3_bucket=lazy_constants.S3_DATALAKE_BUCKET,
         s3_directory=(
-            TABLEAU_SNAPSHOT_BUCKET_DIRECTORY
+            lazy_constants.TABLEAU_SNAPSHOT_BUCKET_DIRECTORY
             + "/{{data_interval_start.strftime('%Y-%m-%d')}}"
         ),
-        s3_conn_id=S3_CONN_ID,
+        s3_conn_id=lazy_constants.S3_CONN_ID,
     )
 
     snapshot_task

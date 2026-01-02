@@ -14,10 +14,7 @@ from pandas import DataFrame
 from pendulum import datetime, now, duration
 from snowflake.connector import SnowflakeConnection
 
-from above.common.constants import (
-    RAW_DATABASE_NAME,
-    SNOWFLAKE_CONN_ID,
-)
+from above.common.constants import lazy_constants
 from above.common.slack_alert import task_failure_slack_alert
 from above.common.snowflake_utils import dataframe_to_snowflake
 
@@ -26,25 +23,39 @@ this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 dag_start_date: datetime = datetime(2025, 6, 18, tz="UTC")
 
 
-check_commerce_credentials: Dict = json.loads(Variable.get("checkcommerce"))
-MERCHANT_NUMBER = check_commerce_credentials.get("merchant_number")
-MERCHANT_PASSWORD = check_commerce_credentials.get("merchant_password")
-AUTH_URL = check_commerce_credentials.get("auth_url")
-REPORT_URL = check_commerce_credentials.get("report_url")
-
 RAW_SCHEMA_NAME: str = "CHECK_COMMERCE"
 
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-snowflake_hook.database = RAW_DATABASE_NAME
-snowflake_hook.schema = RAW_SCHEMA_NAME
-snowflake_connection: SnowflakeConnection = snowflake_hook.get_conn()
+def get_check_commerce_credentials() -> Dict:
+    return json.loads(Variable.get("checkcommerce"))
 
-PARAMS = {
-    "UserName": MERCHANT_NUMBER,
-    "Password": MERCHANT_PASSWORD,
-    "Action": "Token",
-    "OutputType": "JSON"
-}
+def get_merchant_number() -> str:
+    return get_check_commerce_credentials().get("merchant_number")
+
+def get_merchant_password() -> str:
+    return get_check_commerce_credentials().get("merchant_password")
+
+def get_auth_url() -> str:
+    return get_check_commerce_credentials().get("auth_url")
+
+def get_report_url() -> str:
+    return get_check_commerce_credentials().get("report_url")
+
+def get_snowflake_hook() -> SnowflakeHook:
+    hook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
+    hook.database = lazy_constants.RAW_DATABASE_NAME
+    hook.schema = RAW_SCHEMA_NAME
+    return hook
+
+def get_snowflake_connection() -> SnowflakeConnection:
+    return get_snowflake_hook().get_conn()
+
+def get_params() -> dict:
+    return {
+        "UserName": get_merchant_number(),
+        "Password": get_merchant_password(),
+        "Action": "Token",
+        "OutputType": "JSON"
+    }
 
 def get_token(AUTH_URL: str, PARAMS: dict) -> List:
     auth_response = requests.get(AUTH_URL, params=PARAMS)
@@ -76,8 +87,6 @@ def response_to_dataframe(report_response: List) -> DataFrame:
         logger.error(f"Other error: {e}")
     return df
 
-TOKEN = get_token(AUTH_URL, PARAMS)
-
 @task
 def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
     """
@@ -104,17 +113,17 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.MID = target.MID
                 when matched then update set
@@ -187,7 +196,7 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -223,17 +232,17 @@ def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_U
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.COMP_NUM = target.COMP_NUM
                 when matched then update set
@@ -273,7 +282,7 @@ def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_U
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -323,17 +332,17 @@ def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, 
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.COMPANY = target.COMPANY
                             and source.LIDESCRIPTION = target.LIDESCRIPTION
@@ -391,7 +400,7 @@ def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, 
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -434,17 +443,17 @@ def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN:
         suffix: str = "_UPDATES"
         dataframe_to_snowflake(
             df,
-            database_name=RAW_DATABASE_NAME,
+            database_name=lazy_constants.RAW_DATABASE_NAME,
             schema_name=RAW_SCHEMA_NAME,
             table_name=f"{RAW_TABLE_NAME}{suffix}",
             overwrite=True,
-            snowflake_connection=snowflake_connection,
+            snowflake_connection=get_snowflake_connection(),
         )
         merge_query: str = dedent(
             f"""
-            merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+            merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                 as target
-            using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+            using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                 as source
                     on source.MID = target.MID
                         and source.REPORT_MONTH = target.REPORT_MONTH
@@ -577,7 +586,7 @@ def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN:
         )
 
         try:
-            snowflake_connection.cursor().execute(merge_query)
+            get_snowflake_connection().cursor().execute(merge_query)
         except ValueError:
             logger.error("Invalid value")
             raise AirflowFailException()
@@ -628,17 +637,17 @@ def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, R
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.MERCHANT_NUMBER = target.MERCHANT_NUMBER
                             and source.INVOICE_START = target.INVOICE_START
@@ -689,7 +698,7 @@ def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, R
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -735,17 +744,17 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.ID = target.ID
                             and source.START_DATE = target.START_DATE
@@ -904,7 +913,7 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -950,17 +959,17 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.ID = target.ID
                             and source.START_DATE = target.START_DATE
@@ -1119,7 +1128,7 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -1165,17 +1174,17 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.ID = target.ID
                             and source.START_DATE = target.START_DATE
@@ -1334,7 +1343,7 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -1380,17 +1389,17 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.REMITTANCEPK = target.REMITTANCEPK
                             and source.START_DATE = target.START_DATE
@@ -1531,7 +1540,7 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -1577,17 +1586,17 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
             suffix: str = "_UPDATES"
             dataframe_to_snowflake(
                 df,
-                database_name=RAW_DATABASE_NAME,
+                database_name=lazy_constants.RAW_DATABASE_NAME,
                 schema_name=RAW_SCHEMA_NAME,
                 table_name=f"{RAW_TABLE_NAME}{suffix}",
                 overwrite=True,
-                snowflake_connection=snowflake_connection,
+                snowflake_connection=get_snowflake_connection(),
             )
             merge_query: str = dedent(
                 f"""
-                merge into {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
+                merge into {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}
                     as target
-                using {RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
+                using {lazy_constants.RAW_DATABASE_NAME}.{RAW_SCHEMA_NAME}.{RAW_TABLE_NAME}{suffix}
                     as source
                         on source.DISBURSEMENTPK = target.DISBURSEMENTPK
                             and source.START_DATE = target.START_DATE
@@ -1710,7 +1719,7 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
             )
 
             try:
-                snowflake_connection.cursor().execute(merge_query)
+                get_snowflake_connection().cursor().execute(merge_query)
             except ValueError:
                 logger.error("Invalid value")
                 raise AirflowFailException()
@@ -1739,12 +1748,16 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
     ),
 )
 def checkcommerce_api_extract():
-    get_and_load_merchant_list(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'MERCHANT_LIST') >> get_and_load_merchant_information(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'MERCHANT_INFORMATION')
-    get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'INVOICE_AGGREGATE_LINE_ITEMS')
-    get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'INVOICE_AGGREGATE_DEMOGRAPHIC_DATA')
-    get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'AGGREGATOR_MERCHANT_INVOICE')
-    get_and_load_transaction_log(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'TRANSACTION_LOG') >> get_and_load_returned_transactions(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'TRANSACTION_LOG_RETURNS') >> get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE')
-    get_and_load_remittance_information(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'REMITTANCE_INFORMATION')
-    get_and_load_disbursement_information(MERCHANT_NUMBER, TOKEN, REPORT_URL, 'DISBURSEMENT_INFORMATION')
+    merchant_number = get_merchant_number()
+    token = get_token(get_auth_url(), get_params())
+    report_url = get_report_url()
+    
+    get_and_load_merchant_list(merchant_number, token, report_url, 'MERCHANT_LIST') >> get_and_load_merchant_information(merchant_number, token, report_url, 'MERCHANT_INFORMATION')
+    get_and_load_invoice_aggregate_line_items(merchant_number, token, report_url, 'INVOICE_AGGREGATE_LINE_ITEMS')
+    get_and_load_invoice_aggregate_demographic_data(merchant_number, token, report_url, 'INVOICE_AGGREGATE_DEMOGRAPHIC_DATA')
+    get_and_load_aggregator_merchant_invoice(merchant_number, token, report_url, 'AGGREGATOR_MERCHANT_INVOICE')
+    get_and_load_transaction_log(merchant_number, token, report_url, 'TRANSACTION_LOG') >> get_and_load_returned_transactions(merchant_number, token, report_url, 'TRANSACTION_LOG_RETURNS') >> get_and_load_effective_entry_date_transactions(merchant_number, token, report_url, 'TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE')
+    get_and_load_remittance_information(merchant_number, token, report_url, 'REMITTANCE_INFORMATION')
+    get_and_load_disbursement_information(merchant_number, token, report_url, 'DISBURSEMENT_INFORMATION')
 
 checkcommerce_api_extract()
