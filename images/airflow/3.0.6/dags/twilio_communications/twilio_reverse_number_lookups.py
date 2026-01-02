@@ -45,7 +45,7 @@ def twilio_reverse_number_lookups():
         raw_table_name="REVERSE_NUMBER_LOOKUPS",
         raw_schema_name="TWILIO",
         twilio_fields=["caller_name", "line_type_intelligence"],
-        lookup_limit=5000,
+        lookup_limit=5000 if lazy_constants.ENVIRONMENT_FLAG == "prod" else 5,
         lookup_refresh_months=12,
         api_delay_seconds=0.05,
         max_failed_numbers_to_log=10,
