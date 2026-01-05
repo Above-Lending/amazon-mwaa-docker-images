@@ -53,7 +53,10 @@ def check_data_interval_times(**context):
 
 
 @task
-def get_talkdesk_report_to_s3(talkdesk_auth_token, report, **context):
+def get_talkdesk_report_to_s3(report, **context):
+    # Retrieve auth token at execution time, not at DAG parse time
+    talkdesk_auth_token = get_talkdesk_api_auth_token()
+    
     data_interval_start = context.get("data_interval_start")
     data_interval_end = context.get("data_interval_end")
     time_format: str = "%Y-%m-%dT%H:%M:%S.000Z"
@@ -175,7 +178,7 @@ with DAG(
     chain(
         check_data_interval_times(),
         [get_talkdesk_report_to_s3.override(task_id=f"get_talkdesk_{report}")
-         (get_talkdesk_api_auth_token(), report) for report in TALKDESK_REPORTS],
+         (report) for report in TALKDESK_REPORTS],
         unzip_split,
         preprocess,
         trigger_load_dag

@@ -7,6 +7,8 @@ import requests
 from airflow.sdk import Variable
 from pendulum import datetime, duration, now, parse, Duration, DateTime
 
+from above.common.constants import lazy_constants
+
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ def _set_talkdesk_api_auth_token() -> str:
     cf. https://docs.talkdesk.com/reference/oauthtoken-basic-cc
     and https://stackoverflow.com/questions/65187566
     """
-    talkdesk_api_account_name: str = Variable.get("talkdesk_api_account_name")
+    talkdesk_api_account_name: str = lazy_constants.TALKDESK_ACCOUNT_NAME
     talkdesk_api_client_id: str = Variable.get("talkdesk_api_client_id")
     talkdesk_api_client_secret: str = Variable.get("talkdesk_api_client_secret")
 

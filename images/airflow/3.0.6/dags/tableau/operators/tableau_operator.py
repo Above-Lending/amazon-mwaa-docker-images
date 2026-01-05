@@ -86,20 +86,23 @@ class TableauOperator(BaseOperator):
         self.site_id = site_id
         self.server_url = server_url
 
-        # Auto-retrieve credentials if not provided
-        if token_name is None or personal_access_token is None:
-            logger.info("Retrieving Tableau credentials from Airflow Variables")
-            credentials = get_tableau_credentials()
-            self.token_name = credentials["TOKEN_NAME"]
-            self.personal_access_token = credentials["TOKEN_SECRET"]
-        else:
-            self.token_name = token_name
-            self.personal_access_token = personal_access_token
+        # Store credentials or flag to retrieve later
+        self.token_name = token_name
+        self.personal_access_token = personal_access_token
+        self._credentials_retrieved = False
 
         self.server: Server
         self.retry_download_count: int = 0
 
     def _connect(self) -> Server:
+        # Auto-retrieve credentials if not provided (deferred until execution time)
+        if not self._credentials_retrieved and (self.token_name is None or self.personal_access_token is None):
+            logger.info("Retrieving Tableau credentials from Airflow Variables")
+            credentials = get_tableau_credentials()
+            self.token_name = credentials["TOKEN_NAME"]
+            self.personal_access_token = credentials["TOKEN_SECRET"]
+            self._credentials_retrieved = True
+
         tableau_auth: PersonalAccessTokenAuth = PersonalAccessTokenAuth(
             token_name=self.token_name,
             personal_access_token=self.personal_access_token,

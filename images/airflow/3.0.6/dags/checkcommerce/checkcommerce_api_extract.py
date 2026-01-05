@@ -88,11 +88,15 @@ def response_to_dataframe(report_response: List) -> DataFrame:
     return df
 
 @task
-def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_merchant_list(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of merchants from the Check Commerce API
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     report_params = {
         "Token": TOKEN,
@@ -207,11 +211,15 @@ def get_and_load_merchant_list(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str
         logger.info(report_response.text)
 
 @task
-def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str)  -> None:
+def get_and_load_merchant_information(RAW_TABLE_NAME: str)  -> None:
     """
     Fetches a dataframe of merchant information from the Check Commerce API
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     report_params = {
         "Token": TOKEN,
@@ -293,11 +301,15 @@ def get_and_load_merchant_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_U
         logger.info(report_response.text)
 
 @task
-def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_invoice_aggregate_line_items(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of invoice line items from the Check Commerce API
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     #The current month returns no data
     #This ensures we get the last month's data
@@ -411,11 +423,15 @@ def get_and_load_invoice_aggregate_line_items(MERCHANT_NUMBER: str, TOKEN: str, 
         logger.info(report_response.text)
 
 @task
-def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_invoice_aggregate_demographic_data(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of invoice aggregate demographic data from the Check Commerce API
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     report_month = date.today().strftime("%m")
     report_year = date.today().strftime("%Y")
@@ -597,11 +613,15 @@ def get_and_load_invoice_aggregate_demographic_data(MERCHANT_NUMBER: str, TOKEN:
         logger.info(report_response.text)            
 
 @task
-def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_aggregator_merchant_invoice(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of aggregate merchant invoices from the Check Commerce API
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     #The current month returns no data
     #This ensures we get the last month's data
@@ -709,11 +729,15 @@ def get_and_load_aggregator_merchant_invoice(MERCHANT_NUMBER: str, TOKEN: str, R
         logger.info(report_response.text)                
 
 @task
-def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_transaction_log(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of transaction data from the Check Commerce API
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     end_date = date.today()
     start_date = end_date - timedelta(days=1)
@@ -924,11 +948,15 @@ def get_and_load_transaction_log(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: s
         logger.info(report_response.text)                
 
 @task
-def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_returned_transactions(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of returned transactions from the Check Commerce API and loads them to Snowflake
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     end_date = date.today()
     start_date = end_date - timedelta(days=1)
@@ -1139,11 +1167,15 @@ def get_and_load_returned_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_
         logger.info(report_response.text)
 
 @task
-def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_effective_entry_date_transactions(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of transactions  using effective entry date from the Check Commerce API and loads them to Snowflake
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     end_date = date.today()
     start_date = end_date - timedelta(days=1)
@@ -1354,11 +1386,15 @@ def get_and_load_effective_entry_date_transactions(MERCHANT_NUMBER: str, TOKEN: 
         logger.info(report_response.text)
 
 @task
-def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_remittance_information(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of remittance information from the Check Commerce API and loads them to Snowflake
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     end_date = date.today()
     start_date = end_date - timedelta(days=1)
@@ -1551,11 +1587,15 @@ def get_and_load_remittance_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT
         logger.info(report_response.text)
 
 @task
-def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPORT_URL: str, RAW_TABLE_NAME: str) -> None:
+def get_and_load_disbursement_information(RAW_TABLE_NAME: str) -> None:
     """
     Fetches a dataframe of disbursment information from the Check Commerce API and loads them to Snowflake
     :return: None
     """
+    # Retrieve credentials and token at execution time
+    MERCHANT_NUMBER = get_merchant_number()
+    TOKEN = get_token(get_auth_url(), get_params())
+    REPORT_URL = get_report_url()
 
     end_date = date.today()
     start_date = end_date - timedelta(days=1)
@@ -1748,16 +1788,12 @@ def get_and_load_disbursement_information(MERCHANT_NUMBER: str, TOKEN: str, REPO
     ),
 )
 def checkcommerce_api_extract():
-    merchant_number = get_merchant_number()
-    token = get_token(get_auth_url(), get_params())
-    report_url = get_report_url()
-    
-    get_and_load_merchant_list(merchant_number, token, report_url, 'MERCHANT_LIST') >> get_and_load_merchant_information(merchant_number, token, report_url, 'MERCHANT_INFORMATION')
-    get_and_load_invoice_aggregate_line_items(merchant_number, token, report_url, 'INVOICE_AGGREGATE_LINE_ITEMS')
-    get_and_load_invoice_aggregate_demographic_data(merchant_number, token, report_url, 'INVOICE_AGGREGATE_DEMOGRAPHIC_DATA')
-    get_and_load_aggregator_merchant_invoice(merchant_number, token, report_url, 'AGGREGATOR_MERCHANT_INVOICE')
-    get_and_load_transaction_log(merchant_number, token, report_url, 'TRANSACTION_LOG') >> get_and_load_returned_transactions(merchant_number, token, report_url, 'TRANSACTION_LOG_RETURNS') >> get_and_load_effective_entry_date_transactions(merchant_number, token, report_url, 'TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE')
-    get_and_load_remittance_information(merchant_number, token, report_url, 'REMITTANCE_INFORMATION')
-    get_and_load_disbursement_information(merchant_number, token, report_url, 'DISBURSEMENT_INFORMATION')
+    get_and_load_merchant_list('MERCHANT_LIST') >> get_and_load_merchant_information('MERCHANT_INFORMATION')
+    get_and_load_invoice_aggregate_line_items('INVOICE_AGGREGATE_LINE_ITEMS')
+    get_and_load_invoice_aggregate_demographic_data('INVOICE_AGGREGATE_DEMOGRAPHIC_DATA')
+    get_and_load_aggregator_merchant_invoice('AGGREGATOR_MERCHANT_INVOICE')
+    get_and_load_transaction_log('TRANSACTION_LOG') >> get_and_load_returned_transactions('TRANSACTION_LOG_RETURNS') >> get_and_load_effective_entry_date_transactions('TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE')
+    get_and_load_remittance_information('REMITTANCE_INFORMATION')
+    get_and_load_disbursement_information('DISBURSEMENT_INFORMATION')
 
 checkcommerce_api_extract()

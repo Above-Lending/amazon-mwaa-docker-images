@@ -118,13 +118,15 @@ def create_record_list(auth_token: str, record_list_name: str) -> str:
 
 
 @task
-def create_talkdesk_record_lists(auth_token: str, view_name: str, record_list_name_suffix: str):
+def create_talkdesk_record_lists(view_name: str, record_list_name_suffix: str):
     """
     Creates Talkdesk Record lists (dialer lists)--one for first-time
     delinquencies and another for everyone else--and populates them
     from a data warehouse query result.
-    :param auth_token:
     """
+    # Retrieve auth token at execution time, not at DAG parse time
+    auth_token: str = get_talkdesk_api_auth_token()
+    
     timestamp = now("America/Chicago").strftime("%Y-%m-%d %H:%M%Z %A")
     record_list_name = f"Airflow {timestamp} • {record_list_name_suffix}"
     record_list_id = create_record_list(auth_token=auth_token, record_list_name=record_list_name)
@@ -183,13 +185,12 @@ def create_talkdesk_record_lists(auth_token: str, view_name: str, record_list_na
     ),
 )
 def talkdesk_dialer():
-    auth_token: str = get_talkdesk_api_auth_token()
     chain(
         check_is_business_day(),
         check_dialer_list_freshness(),
-        create_talkdesk_record_lists(auth_token, 'alerts.airflow.dpd_below_thirty', '1_29_dpd'),
-        create_talkdesk_record_lists(auth_token,'alerts.airflow.dpd_plus_thirty', '30_119_dpd'),
-        create_talkdesk_record_lists(auth_token,'alerts.airflow.DPD_ONE_LIST', '1_119_dpd')
+        create_talkdesk_record_lists('alerts.airflow.dpd_below_thirty', '1_29_dpd'),
+        create_talkdesk_record_lists('alerts.airflow.dpd_plus_thirty', '30_119_dpd'),
+        create_talkdesk_record_lists('alerts.airflow.DPD_ONE_LIST', '1_119_dpd')
 
     )
 
