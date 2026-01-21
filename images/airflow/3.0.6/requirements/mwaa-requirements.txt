@@ -1,0 +1,26 @@
+--find-links /usr/local/airflow/plugins
+--no-index
+--constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.0.6/constraints-3.12.txt"
+
+## CUSTOM REQUIREMENTS FOR MWAA FOR ABOVE LENDING.
+
+# In order to test locally, comment the top three lines and 
+# use the following command to create a local virtual environment:
+
+# ```shell
+# uv venv .venv
+# source .venv/bin/activate
+# rm -r ./wheels && pip download -r ./requirements/mwaa-requirements.txt --constraint ./requirements/mwaa_essential_constraints.txt -d ./wheels/
+# pip install -r ./requirements/mwaa-requirements.txt --constraint ./requirements/mwaa_essential_constraints.txt --find-links ./wheels --no-index
+
+## PACKAGES
+apache-airflow-providers-amazon[aiobotocore]
+apache-airflow-providers-snowflake
+apache-airflow-providers-slack
+apache-airflow-providers-ssh
+
+# Custom 3rd Party Packages
+filesplit
+tableauserverclient
+trustpilot
+twilio

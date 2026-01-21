@@ -16,4 +16,3 @@ venv
 .mypy_cache
 .env
 /wheels
-/requirements

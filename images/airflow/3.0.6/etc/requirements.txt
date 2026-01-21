@@ -1,7 +1,0 @@
---constraint "/usr/local/airflow/dags/airflow_constraints.txt"
---find-links /usr/local/airflow/plugins/
---no-index 
-
-filesplit
-slack-sdk
-twilio

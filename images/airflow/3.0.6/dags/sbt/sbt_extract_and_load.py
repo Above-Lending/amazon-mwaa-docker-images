@@ -9,7 +9,7 @@ import requests
 from airflow.decorators import dag, task
 from airflow.sdk import Variable
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from numpy import NaN
+from numpy import nan
 from pandas import DataFrame, concat
 from pendulum import (
     DateTime, datetime, duration, interval, now, parse
@@ -332,7 +332,7 @@ def get_subscribers() -> None:
                 df["RELATIONS"] = DataFrame(
                     df["RELATIONS"].apply(transpose_dictionaries)
                 )
-            df = df.replace(NaN, None).replace("", None).replace("null", None)
+            df = df.replace(nan, None).replace("", None).replace("null", None)
             write_pandas_to_database(df, temp_table_name)
 
     switch_table(from_name=temp_table_name, to_name=table_name)
@@ -377,7 +377,7 @@ def get_templates():
             df.reset_index(drop=True, inplace=True)
             df["GROUP_NAME"] = group
             df["_AIRFLOADED_AT_UTC"] = now("UTC")
-            df = df.replace(NaN, None).replace("", None).replace("null", None)
+            df = df.replace(nan, None).replace("", None).replace("null", None)
             write_pandas_to_database(df, temp_table_name)
 
     switch_table(from_name=temp_table_name, to_name=table_name)
@@ -423,7 +423,7 @@ def get_shorturl_clicks():
             df.reset_index(drop=True, inplace=True)
             df["BRAND"] = brand
             df["_AIRFLOADED_AT_UTC"] = now("UTC")
-            df = df.replace(NaN, None).replace("", None).replace("null", None)
+            df = df.replace(nan, None).replace("", None).replace("null", None)
             write_pandas_to_database(df, temp_table_name)
 
     switch_table(from_name=temp_table_name, to_name=table_name)
@@ -484,7 +484,7 @@ def get_shorturl_click_details():
             df.reset_index(drop=True, inplace=True)
             df["BRAND"] = brand
             df["_AIRFLOADED_AT_UTC"] = now("UTC")
-            df = df.replace(NaN, None).replace("", None).replace("null", None)
+            df = df.replace(nan, None).replace("", None).replace("null", None)
             write_pandas_to_database(df, table_name)
 
 
@@ -547,7 +547,7 @@ def get_inbound_messages():
                 df["SUBSCRIBERCUSTOMPARAMS"] = DataFrame(
                     df["SUBSCRIBERCUSTOMPARAMS"].apply(transpose_dictionaries)
                 )
-            df = df.replace(NaN, None).replace("", None).replace("null", None)
+            df = df.replace(nan, None).replace("", None).replace("null", None)
             write_pandas_to_database(df, table_name)
 
 
@@ -616,7 +616,7 @@ def get_outbound_messages():
                 )
             if "USER" in df.columns:
                 df["USER"] = df["USER"].apply(replace_empty_with_none)
-            df = df.replace(NaN, None).replace("", None).replace("null", None)
+            df = df.replace(nan, None).replace("", None).replace("null", None)
             write_pandas_to_database(df, table_name)
 
 
