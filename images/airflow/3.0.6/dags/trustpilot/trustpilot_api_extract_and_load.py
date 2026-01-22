@@ -13,7 +13,6 @@ from pandas import DataFrame, concat
 from pendulum import (
     DateTime, datetime, now, parse
 )
-from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 from trustpilot import client
 
@@ -244,7 +243,7 @@ def get_consumer_profiles():
 @dag(
     dag_id=this_filename,
     description="Extracts Trustpilot API data, loads into the data warehouse",
-    tags=['data', 'trustpilot'],
+    tags=['trustpilot', 'non_alert'],
     schedule="17 09 * * *",  # Daily 0317 CST/0417 CDT
     start_date=api_start_timestamp,
     max_active_runs=1,

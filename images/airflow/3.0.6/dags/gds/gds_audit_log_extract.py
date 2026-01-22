@@ -191,7 +191,7 @@ def report_failed_request_ids(failed_request_ids_batches: list[list[str]]) -> No
 @dag(
     dag_id=THIS_FILENAME,
     description="Extracts the audit log from GDS",
-    tags=["data", "gds", "applications"],
+    tags=["gds", "non_alert"],
     schedule="0 3 * * *",  # Daily at 10pm CT
     start_date=DAG_START_DATE,
     max_active_runs=1,

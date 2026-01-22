@@ -189,7 +189,7 @@ def backup_custom_tableau_queries() -> None:
 @dag(
     dag_id=this_filename,
     description="Extract and backup custom SQL queries from Tableau workbooks in S3",
-    tags=["data", "tableau", "backup", "sql"],
+    tags=["tableau", "backup", "non_alert"],
     schedule="20 03 * * *",  # Daily 10:20pm CST (03:20 UTC)
     start_date=dag_start_date,
     max_active_runs=1,

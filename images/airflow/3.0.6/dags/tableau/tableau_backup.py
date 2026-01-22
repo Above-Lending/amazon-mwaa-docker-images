@@ -18,7 +18,7 @@ dag_start_date: DateTime = datetime(2024, 6, 1, tz="UTC")
 @dag(
     dag_id=this_filename,
     description="Backs up Tableau workbooks updated in the last 24 hours to S3",
-    tags=["data", "tableau", "backup"],
+    tags=["tableau", "backup", "non_alert"],
     schedule="20 02 * * *",  # Daily 9:20pm CST (02:20 UTC)
     start_date=dag_start_date,
     max_active_runs=1,

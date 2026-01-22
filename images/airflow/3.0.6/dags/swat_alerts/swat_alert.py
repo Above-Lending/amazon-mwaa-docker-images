@@ -1,26 +1,26 @@
+import json
 import logging
 import os
+import uuid
+from datetime import datetime
 from time import sleep
 from typing import Dict
-from datetime import datetime
 from zoneinfo import ZoneInfo
+
 import pandas as pd
 import pendulum
 import yaml
-import json
-import pandas as pd
+from above.common.constants import lazy_constants
 from airflow import DAG
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.sdk import Variable
 from pandas import DataFrame
 from pendulum import datetime, now
-import uuid
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from above.common.constants import lazy_constants
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ CHANNELS = {
     "alerts-servicing":              "C08SR04K1E1",
     "alerts-special-handling":       "C02TR6AGUAD",
     "logs-apps-prod":                "C053MEDFND9",
+    "logs-capital-markets":          "C09KYAYR1AN",
     "logs-collections":              "C09GU35A01K",
     "logs-credit-model-variables":   "C08PJCYKWN9",
     "logs-data-bi":                  "C09C9EQ0KN0",
@@ -68,6 +69,7 @@ def log_error(msg: str, job: str = "") -> None:
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
 
 def expand_hour_field(hour_field: str) -> list[int]:
     hours = set()
@@ -335,6 +337,7 @@ def create_dynamic_dag(observation: Dict) -> DAG:
 
         @dag(
             dag_id=f"swat__{bundle_name}",
+            tags=["swat", "alert"],
             schedule=cron_schedule,
             start_date=datetime(2025, 3, 20),
             catchup=False,

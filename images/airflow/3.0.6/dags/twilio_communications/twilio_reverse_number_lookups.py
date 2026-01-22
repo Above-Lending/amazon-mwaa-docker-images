@@ -17,11 +17,10 @@ from twilio_communications.operators.twilio_lookup_operator import TwilioLookupO
 DAG_ID = os.path.basename(__file__).replace(".py", "")
 DAG_START_DATE = datetime(2024, 6, 1, tz="UTC")
 
-
 @dag(
     dag_id=DAG_ID,
     description="Refreshes reverse lookups and loads into the data warehouse",
-    tags=["data", "twilio", "phone numbers"],
+    tags=["twilio", "non_alert"],
     schedule="55 11 * * *",  # Daily 0555 winter/0655 summer CT
     start_date=DAG_START_DATE,
     max_active_runs=1,
@@ -40,17 +39,6 @@ DAG_START_DATE = datetime(2024, 6, 1, tz="UTC")
 def twilio_reverse_number_lookups():
     """Twilio Reverse Number Lookups DAG."""
 
-    lookup_task = TwilioLookupOperator(
-        task_id="fetch_and_lookup_numbers",
-        raw_table_name="REVERSE_NUMBER_LOOKUPS",
-        raw_schema_name="TWILIO",
-        twilio_fields=["caller_name", "line_type_intelligence"],
-        lookup_limit=5000 if lazy_constants.ENVIRONMENT_FLAG == "prod" else 5,
-        lookup_refresh_months=12,
-        api_delay_seconds=0.05,
-        max_failed_numbers_to_log=10,
-        skip_on_empty=True,
-        write_to_snowflake=True,
-    )
+    TwilioLookupOperator(task_id="fetch_and_lookup_numbers")
 
 twilio_reverse_number_lookups()

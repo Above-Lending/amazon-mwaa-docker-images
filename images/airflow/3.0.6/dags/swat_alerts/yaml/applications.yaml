@@ -66,3 +66,43 @@ applications:
         channel: logs-data-bi
         title: "Web Flow Volume Update"
         send_on_zero_results: false
+
+  - name: ACCOUNTING_COLLATERAL_BALANCE
+    cron_schedule: "0 9 * * 1-5"   # once per workday
+    enabled: true
+    job:
+      - view_name: CRITERIA_ACCOUNTING_COLLATERAL_BALANCE
+        channel: mute
+        title: "CRITERIA_ACCOUNTING_COLLATERAL_BALANCE"
+        send_on_zero_results: true
+
+      - view_name: ALERT_ACCOUNTING_COLLATERAL_BALANCE
+        channel: alerts-capital-markets
+        title: "Alert: Collateral Shortage Detected (Last 5 Days)"
+        send_on_zero_results: false
+
+      - view_name: LOG_ACCOUNTING_COLLATERAL_BALANCE
+        channel: logs-capital-markets
+        title: "LOG_ACCOUNTING_COLLATERAL_BALANCE"
+        send_on_zero_results: true
+
+        applications:
+  - name: WI_NEW_ONBOARDED_LOANS
+    cron_schedule: "0 12 * * 1-5"
+    enabled: true
+    job:
+      - view_name: CRITERIA_WI_NEW_ONBOARDED_LOANS
+        channel: mute
+        title: "CRITERIA_WI_NEW_ONBOARDED_LOANS"
+        send_on_zero_results: true
+
+      - view_name: ALERT_WI_NEW_ONBOARDED_LOANS
+        channel: alerts-special-handling
+        title: "WI Onboarded Loans Requiring Special Handling"
+        send_on_zero_results: false
+
+      - view_name: LOG_WI_NEW_ONBOARDED_LOANS
+        channel: logs-apps-prod
+        title: "LOG_WI_NEW_ONBOARDED_LOANS"
+        send_on_zero_results: false
+

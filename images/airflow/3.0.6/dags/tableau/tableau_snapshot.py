@@ -19,7 +19,7 @@ dag_start_date: DateTime = datetime(2024, 6, 1, tz="UTC")
 @dag(
     dag_id=this_filename,
     description="Snapshots all Tableau Files.",
-    tags=["data", "tableau", "snapshot"],
+    tags=["tableau", "snapshot", "backup", "non_alert"],
     schedule="20 22 * * SUN",  # 17:20 CST (22:20 UTC) every Sunday
     start_date=dag_start_date,
     max_active_runs=1,

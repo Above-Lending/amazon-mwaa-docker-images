@@ -15,7 +15,6 @@ from pendulum import (
     DateTime, datetime, duration, interval, now, parse
 )
 from snowflake.connector.pandas_tools import write_pandas
-from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 
 from above.common.constants import lazy_constants
@@ -623,7 +622,7 @@ def get_outbound_messages():
 @dag(
     dag_id=this_filename,
     description="Extracts SBT API data and loads into the data warehouse",
-    tags=['data', 'sbt', 'solutions by text'],
+    tags=['sbt', 'non_alert'],
     schedule="33 09 * * *",  # Daily 0333 CST/0433 CDT
     start_date=api_start_date,
     max_active_runs=1,
