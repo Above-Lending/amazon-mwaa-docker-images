@@ -1,0 +1,10 @@
+airflow:
+  - name: CHECK_COMMERCE_NO_UPDATES
+    cron_schedule: "15 8 * * 1-5"
+    enabled: true
+    job:
+      - view_name: CHECK_COMMERCE_DAILY_UPDATES
+        channel: alerts-data-bi
+        title: Check Commerce API 
+        send_on_zero_results: false
+

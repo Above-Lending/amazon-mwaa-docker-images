@@ -51,6 +51,7 @@ CHANNELS = {
     "alerts-servicing":              "C08SR04K1E1",
     "alerts-special-handling":       "C02TR6AGUAD",
     "logs-apps-prod":                "C053MEDFND9",
+    "logs-capital-markets":          "C09KYAYR1AN",
     "logs-collections":              "C09GU35A01K",
     "logs-credit-model-variables":   "C08PJCYKWN9",
     "logs-data-bi":                  "C09C9EQ0KN0",

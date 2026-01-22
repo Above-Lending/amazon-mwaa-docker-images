@@ -22,7 +22,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 dag_start_date: datetime = datetime(2025, 6, 18, tz="UTC")
 
-
 RAW_SCHEMA_NAME: str = "CHECK_COMMERCE"
 
 def get_check_commerce_credentials() -> Dict:
@@ -93,7 +92,7 @@ def get_and_load_merchant_list(RAW_TABLE_NAME: str) -> None:
     Fetches a dataframe of merchants from the Check Commerce API
     :return: None
     """
-    # Retrieve credentials and token at execution time
+        # Retrieve credentials and token at execution time
     MERCHANT_NUMBER = get_merchant_number()
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
@@ -106,7 +105,7 @@ def get_and_load_merchant_list(RAW_TABLE_NAME: str) -> None:
         "Parameter_MID": MERCHANT_NUMBER
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
 
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
@@ -229,7 +228,7 @@ def get_and_load_merchant_information(RAW_TABLE_NAME: str)  -> None:
         "Parameter_MID": MERCHANT_NUMBER
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
@@ -301,7 +300,7 @@ def get_and_load_merchant_information(RAW_TABLE_NAME: str)  -> None:
         logger.info(report_response.text)
 
 @task
-def get_and_load_invoice_aggregate_line_items(RAW_TABLE_NAME: str) -> None:
+def get_and_load_invoice_aggregate_line_items(RAW_TABLE_NAME: str, REPORT_YEAR: str, REPORT_MONTH: str) -> None:
     """
     Fetches a dataframe of invoice line items from the Check Commerce API
     :return: None
@@ -311,29 +310,24 @@ def get_and_load_invoice_aggregate_line_items(RAW_TABLE_NAME: str) -> None:
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
 
-    #The current month returns no data
-    #This ensures we get the last month's data
-    report_month = (date.today() + timedelta(-30)).strftime("%m")
-    report_year = (date.today() + timedelta(-30)).strftime("%Y")
-
     report_params = {
         "Token": TOKEN,
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "InvoiceAggregateLineItems",
         "Parameter_MID": MERCHANT_NUMBER,
-        "Parameter_Year": report_year,
-        "Parameter_Month": report_month
+        "Parameter_Year": REPORT_YEAR,
+        "Parameter_Month": REPORT_MONTH
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['REPORT_MONTH'] = report_month
-            df['REPORT_YEAR'] = report_year
+            df['REPORT_MONTH'] = REPORT_MONTH
+            df['REPORT_YEAR'] = REPORT_YEAR
             df['CREATED_AT'] = now("UTC")
             df.columns = df.columns.str.upper()
             #Sometimes the API returns duplicate data with the only difference being LIAMOUNT
@@ -446,7 +440,7 @@ def get_and_load_invoice_aggregate_demographic_data(RAW_TABLE_NAME: str) -> None
         "Parameter_Month": report_month
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
@@ -613,7 +607,7 @@ def get_and_load_invoice_aggregate_demographic_data(RAW_TABLE_NAME: str) -> None
         logger.info(report_response.text)            
 
 @task
-def get_and_load_aggregator_merchant_invoice(RAW_TABLE_NAME: str) -> None:
+def get_and_load_aggregator_merchant_invoice(RAW_TABLE_NAME: str, REPORT_YEAR: str, REPORT_MONTH: str) -> None:
     """
     Fetches a dataframe of aggregate merchant invoices from the Check Commerce API
     :return: None
@@ -623,30 +617,25 @@ def get_and_load_aggregator_merchant_invoice(RAW_TABLE_NAME: str) -> None:
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
 
-    #The current month returns no data
-    #This ensures we get the last month's data
-    report_month = (date.today() + timedelta(-30)).strftime("%m")
-    report_year = (date.today() + timedelta(-30)).strftime("%Y")
-
     report_params = {
         "Token": TOKEN,
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "AggregatorMerchantInvoice",
         "Parameter_AggregatorMid": MERCHANT_NUMBER,
-        "Parameter_Month": report_month,
-        "Parameter_Year": report_year
+        "Parameter_Month": REPORT_MONTH,
+        "Parameter_Year": REPORT_YEAR
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
             df.columns = df.columns.str.replace(' ', '_') 
-            df['REPORT_MONTH'] = report_month
-            df['REPORT_YEAR'] = report_year
+            df['REPORT_MONTH'] = REPORT_MONTH
+            df['REPORT_YEAR'] = REPORT_YEAR
             df['CREATED_AT'] = now("UTC")
             df.columns = df.columns.str.upper()
             #Sometimes the API returns duplicate data with the only difference being AMOUNT_PROCESSED
@@ -729,7 +718,7 @@ def get_and_load_aggregator_merchant_invoice(RAW_TABLE_NAME: str) -> None:
         logger.info(report_response.text)                
 
 @task
-def get_and_load_transaction_log(RAW_TABLE_NAME: str) -> None:
+def get_and_load_transaction_log(RAW_TABLE_NAME: str, START_DATE: str, END_DATE: str) -> None:
     """
     Fetches a dataframe of transaction data from the Check Commerce API
     :return: None
@@ -739,30 +728,24 @@ def get_and_load_transaction_log(RAW_TABLE_NAME: str) -> None:
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
-
     report_params = {
         "Token": TOKEN,
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "TransactionLog",
         "Parameter_CoNo": MERCHANT_NUMBER,
-        "Parameter_DateProcessStart": start_date_string,
-        "Parameter_DateProcessEnd": end_date_string
+        "Parameter_DateProcessStart": START_DATE,
+        "Parameter_DateProcessEnd": END_DATE
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
+            df['START_DATE'] = START_DATE
+            df['END_DATE'] = END_DATE
             df['CREATED_AT'] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
@@ -948,7 +931,7 @@ def get_and_load_transaction_log(RAW_TABLE_NAME: str) -> None:
         logger.info(report_response.text)                
 
 @task
-def get_and_load_returned_transactions(RAW_TABLE_NAME: str) -> None:
+def get_and_load_returned_transactions(RAW_TABLE_NAME: str, START_DATE: str, END_DATE: str) -> None:
     """
     Fetches a dataframe of returned transactions from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -958,30 +941,24 @@ def get_and_load_returned_transactions(RAW_TABLE_NAME: str) -> None:
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
-
     report_params = {
         "Token": TOKEN,
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "TransactionLog",
         "Parameter_CoNo": MERCHANT_NUMBER,
-        "Parameter_ReturnDateStart": start_date_string,
-        "Parameter_ReturnDateEnd": end_date_string
+        "Parameter_ReturnDateStart": START_DATE,
+        "Parameter_ReturnDateEnd": END_DATE
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
+            df['START_DATE'] = START_DATE
+            df['END_DATE'] = END_DATE
             df['CREATED_AT'] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
@@ -1167,7 +1144,7 @@ def get_and_load_returned_transactions(RAW_TABLE_NAME: str) -> None:
         logger.info(report_response.text)
 
 @task
-def get_and_load_effective_entry_date_transactions(RAW_TABLE_NAME: str) -> None:
+def get_and_load_effective_entry_date_transactions(RAW_TABLE_NAME: str, START_DATE: str, END_DATE: str) -> None:
     """
     Fetches a dataframe of transactions  using effective entry date from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -1177,30 +1154,24 @@ def get_and_load_effective_entry_date_transactions(RAW_TABLE_NAME: str) -> None:
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
-
     report_params = {
         "Token": TOKEN,
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "TransactionLog",
         "Parameter_CoNo": MERCHANT_NUMBER,
-        "Parameter_EEDStart": start_date_string,
-        "Parameter_EEDEnd": end_date_string
+        "Parameter_EEDStart": START_DATE,
+        "Parameter_EEDEnd": END_DATE
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
+            df['START_DATE'] = START_DATE
+            df['END_DATE'] = END_DATE
             df['CREATED_AT'] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
@@ -1386,7 +1357,7 @@ def get_and_load_effective_entry_date_transactions(RAW_TABLE_NAME: str) -> None:
         logger.info(report_response.text)
 
 @task
-def get_and_load_remittance_information(RAW_TABLE_NAME: str) -> None:
+def get_and_load_remittance_information(RAW_TABLE_NAME: str, START_DATE: str, END_DATE: str) -> None:
     """
     Fetches a dataframe of remittance information from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -1396,30 +1367,24 @@ def get_and_load_remittance_information(RAW_TABLE_NAME: str) -> None:
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
-
     report_params = {
         "Token": TOKEN,
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "RemittanceInformation",
         "Parameter_MID": MERCHANT_NUMBER,
-        "Parameter_StartDate": start_date_string,
-        "Parameter_EndDate": end_date_string    
+        "Parameter_StartDate": START_DATE,
+        "Parameter_EndDate": END_DATE    
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
+            df['START_DATE'] = START_DATE
+            df['END_DATE'] = END_DATE
             df['CREATED_AT'] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
@@ -1587,7 +1552,7 @@ def get_and_load_remittance_information(RAW_TABLE_NAME: str) -> None:
         logger.info(report_response.text)
 
 @task
-def get_and_load_disbursement_information(RAW_TABLE_NAME: str) -> None:
+def get_and_load_disbursement_information(RAW_TABLE_NAME: str, START_DATE: str, END_DATE: str) -> None:
     """
     Fetches a dataframe of disbursment information from the Check Commerce API and loads them to Snowflake
     :return: None
@@ -1597,30 +1562,24 @@ def get_and_load_disbursement_information(RAW_TABLE_NAME: str) -> None:
     TOKEN = get_token(get_auth_url(), get_params())
     REPORT_URL = get_report_url()
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-
-    start_date_string = start_date.strftime("%Y-%m-%d")
-    end_date_string = end_date.strftime("%Y-%m-%d")
-
     report_params = {
         "Token": TOKEN,
         "Action": "Report",
         "OutputType": "JSON",
         "ReportPermDesc": "DisbursementInformation",
         "Parameter_AggregatorMID": MERCHANT_NUMBER,
-        "Parameter_StartDate": start_date_string,
-        "Parameter_EndDate": end_date_string
+        "Parameter_StartDate": START_DATE,
+        "Parameter_EndDate": END_DATE
     }
 
-    report_response = make_api_request(REPORT_URL, report_params)
+    report_response = make_api_request(report_params)
         
     if report_response.status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
-            df['START_DATE'] = start_date_string
-            df['END_DATE'] = end_date_string
+            df['START_DATE'] = START_DATE
+            df['END_DATE'] = END_DATE
             df['CREATED_AT'] = now("UTC")
             df.columns = df.columns.str.upper()
             suffix: str = "_UPDATES"
@@ -1788,12 +1747,21 @@ def get_and_load_disbursement_information(RAW_TABLE_NAME: str) -> None:
     ),
 )
 def checkcommerce_api_extract():
+    end_date = date.today()
+    start_date = end_date - timedelta(days=1)
+
+    START_DATE_STR = start_date.strftime("%Y-%m-%d")
+    END_DATE_STR = end_date.strftime("%Y-%m-%d")
+
+    REPORT_MONTH = (date.today() + timedelta(-30)).strftime("%m")
+    REPORT_YEAR = (date.today() + timedelta(-30)).strftime("%Y")
+
     get_and_load_merchant_list('MERCHANT_LIST') >> get_and_load_merchant_information('MERCHANT_INFORMATION')
-    get_and_load_invoice_aggregate_line_items('INVOICE_AGGREGATE_LINE_ITEMS')
+    get_and_load_invoice_aggregate_line_items('INVOICE_AGGREGATE_LINE_ITEMS',  REPORT_YEAR, REPORT_MONTH)
     get_and_load_invoice_aggregate_demographic_data('INVOICE_AGGREGATE_DEMOGRAPHIC_DATA')
-    get_and_load_aggregator_merchant_invoice('AGGREGATOR_MERCHANT_INVOICE')
-    get_and_load_transaction_log('TRANSACTION_LOG') >> get_and_load_returned_transactions('TRANSACTION_LOG_RETURNS') >> get_and_load_effective_entry_date_transactions('TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE')
-    get_and_load_remittance_information('REMITTANCE_INFORMATION')
-    get_and_load_disbursement_information('DISBURSEMENT_INFORMATION')
+    get_and_load_aggregator_merchant_invoice('AGGREGATOR_MERCHANT_INVOICE', REPORT_YEAR, REPORT_MONTH)
+    get_and_load_transaction_log('TRANSACTION_LOG', START_DATE_STR, END_DATE_STR) >> get_and_load_returned_transactions('TRANSACTION_LOG_RETURNS', START_DATE_STR, END_DATE_STR) >> get_and_load_effective_entry_date_transactions('TRANSACTION_LOG_EFFECTIVE_ENTRY_DATE', START_DATE_STR, END_DATE_STR)
+    get_and_load_remittance_information('REMITTANCE_INFORMATION', START_DATE_STR, END_DATE_STR)
+    get_and_load_disbursement_information('DISBURSEMENT_INFORMATION', START_DATE_STR, END_DATE_STR)
 
 checkcommerce_api_extract()

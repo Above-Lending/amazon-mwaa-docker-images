@@ -95,3 +95,23 @@ dash:
         title: "LOG_UID_39832624_CIP_AUTOPAY"
         send_on_zero_results: false
 
+  - name: CRB_PRE_APPROVAL_NOT_SENT
+    cron_schedule: "0 8-16 * * 1-5"
+    enabled: true
+    job:
+      - view_name: CRITERIA_CRB_PRE_APPROVAL_NOT_SENT
+        channel: mute
+        title: "CRITERIA_CRB_PRE_APPROVAL_NOT_SENT"
+        send_on_zero_results: true
+
+      - view_name: ALERT_CRB_PRE_APPROVAL_NOT_SENT
+        channel: alerts-apps-prod
+        title: "Applications in Terminal Status without Successful CRB PreApproval API send"
+        send_on_zero_results: false
+
+      - view_name: LOG_CRB_PRE_APPROVAL_NOT_SENT
+        channel: logs-apps-prod
+        title: "LOG_CRB_PRE_APPROVAL_NOT_SENT"
+        send_on_zero_results: true
+
+
