@@ -11,11 +11,14 @@ from pendulum import datetime, duration
 
 from above.common.slack_alert import task_failure_slack_alert
 from above.common.constants import lazy_constants
-from twilio_communications.operators.twilio_lookup_operator import TwilioLookupOperator
+from twilio_communications.operators.twilio_lookup_operator import TwilioLookupOperator, get_lookup_limit
 
 # Constants
 DAG_ID = os.path.basename(__file__).replace(".py", "")
 DAG_START_DATE = datetime(2024, 6, 1, tz="UTC")
+LOOKUP_LIMIT: int = get_lookup_limit()
+API_DELAY_SECONDS: float = 0.05  # Small delay between API calls
+LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this.
 
 
 @dag(
@@ -45,9 +48,9 @@ def twilio_reverse_number_lookups():
         raw_table_name="REVERSE_NUMBER_LOOKUPS",
         raw_schema_name="TWILIO",
         twilio_fields=["caller_name", "line_type_intelligence"],
-        lookup_limit=5000 if lazy_constants.ENVIRONMENT_FLAG == "prod" else 5,
-        lookup_refresh_months=12,
-        api_delay_seconds=0.05,
+        lookup_limit=LOOKUP_LIMIT,
+        lookup_refresh_months=LOOKUP_REFRESH_MONTHS,
+        api_delay_seconds=API_DELAY_SECONDS,
         max_failed_numbers_to_log=10,
         skip_on_empty=True,
         write_to_snowflake=True,

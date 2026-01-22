@@ -22,15 +22,6 @@ def get_lookup_limit() -> int:
     """Get the lookup limit based on environment."""
     return 5000 if lazy_constants.ENVIRONMENT_FLAG == "prod" else 5
 
-# Constants
-LOOKUP_LIMIT: int = 5000  # Default; override with get_lookup_limit() in production code
-LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this
-TWILIO_FIELDS: list[str] = ["caller_name", "line_type_intelligence"]
-RAW_SCHEMA_NAME: str = "TWILIO"
-RAW_TABLE_NAME: str = "REVERSE_NUMBER_LOOKUPS"
-MAX_FAILED_NUMBERS_TO_LOG: int = 10  # Limit logged failed phone numbers
-TWILIO_API_DELAY_SECONDS: float = 0.05  # Small delay between API calls
-
 # Define all columns for the merge operation to avoid duplication
 MERGE_COLUMNS: list[str] = [
     "PHONE_NUMBER_E164",
