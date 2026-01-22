@@ -1,14 +1,14 @@
-# name: Quality Checks Workflow
+# # name: Quality Checks Workflow
 
-# on: [push, pull_request]
+# # on: [push, pull_request]
 
-# jobs:
-#   quality_checks:
-#     name: Quality Checks Job
-#     runs-on: ubuntu-latest
+# # jobs:
+# #   quality_checks:
+# #     name: Quality Checks Job
+# #     runs-on: ubuntu-latest
 
-#     container:
-#       image: public.ecr.aws/amazonlinux/amazonlinux:2023
+# #     container:
+# #       image: public.ecr.aws/amazonlinux/amazonlinux:2023
 
 #     steps:
 #       - name: Install required packages...
@@ -32,19 +32,26 @@
 #             tar \
 #             wget \
 #             xz
+#           # bc: used in `./quality-checks/diff-coverage_test.sh`
+#           # libatomic: to prevent `No such file or directory` error when running `lint_python.sh`
+#           yum install -y bc libatomic
 #           # Download and install shellcheck for linting shell scripts
 #           wget https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz
 #           tar -xvf shellcheck-stable.linux.x86_64.tar.xz
 #           cp shellcheck-stable/shellcheck /usr/bin/
+#           # Download and install TruffleHog
+#           curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/bin
 
 #       - name: Check out code...
 #         uses: actions/checkout@v2
+#         with:
+#           fetch-depth: 0
 
-#       - name: Configure Git to allow the current directory as safe
-#         run: git config --global --add safe.directory /__w/amazon-mwaa-docker-images/amazon-mwaa-docker-images
+# #       - name: Configure Git to allow the current directory as safe
+# #         run: git config --global --add safe.directory /__w/amazon-mwaa-docker-images/amazon-mwaa-docker-images
 
-#       - name: Create the necessary Python virtual environments...
-#         run: python3.11 ./create_venvs.py --target production
+# #       - name: Create the necessary Python virtual environments...
+# #         run: python3.11 ./create_venvs.py --target production
 
-#       - name: Run quality checks...
-#         run: python3.11 ./quality-checks/run_all.py
+# #       - name: Run quality checks...
+# #         run: python3.11 ./quality-checks/run_all.py

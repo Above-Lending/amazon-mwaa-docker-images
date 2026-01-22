@@ -23,7 +23,11 @@ To experiment with the image using a vanilla Docker setup, follow these steps:
    package, execute the following command:
 
 ```
+# Create venvs for all Airflow versions
 python3 create_venvs.py --target <development | production>
+
+# Or create venv for a specific version only
+python3 create_venvs.py --target <development | production> --version 3.0.6
 ```
 
 3. Build a supported Airflow version Docker image
@@ -97,6 +101,8 @@ Each of the postfixes added to the image tag represents a certain build type, as
 ## Extra commands
 
 #### Requirements
+
+For details on installing Python depedencies, and optionally bundling wheel files, see the [Managing Python dependencies in requirements.txt](https://docs.aws.amazon.com/mwaa/latest/userguide/best-practices-dependencies.html#best-practices-dependencies-different-ways) in the Amazon MWAA user guide.  
 
 - Add Python dependencies to `requirements/requirements.txt`
 - To test a `requirements.txt` without running Apache Airflow, run:
