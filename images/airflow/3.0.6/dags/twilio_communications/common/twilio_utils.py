@@ -13,7 +13,6 @@ from twilio.rest import Client
 from above.common.constants import lazy_constants
 
 logger = logging.getLogger(__name__)
-
 # Path to SQL files
 SQL_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sql")
 
@@ -21,27 +20,6 @@ SQL_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sql")
 def get_lookup_limit() -> int:
     """Get the lookup limit based on environment."""
     return 5000 if lazy_constants.ENVIRONMENT_FLAG == "prod" else 5
-
-# Define all columns for the merge operation to avoid duplication
-MERGE_COLUMNS: list[str] = [
-    "PHONE_NUMBER_E164",
-    "PHONE_NUMBER_NATIONAL_FORMAT",
-    "PHONE_TYPE",
-    "CARRIER_NAME",
-    "COUNTRY_CODE",
-    "CALLING_COUNTRY_CODE",
-    "MOBILE_COUNTRY_CODE",
-    "MOBILE_NETWORK_CODE",
-    "CALLER_NAME",
-    "CALLER_TYPE",
-    "IS_VALID",
-    "VALIDATION_ERRORS",
-    "_ERROR_CODE_CALLER",
-    "_ERROR_CODE_LINE_TYPE",
-    "_LAST_LOOKUP",
-    "_AIRFLOADED_AT",
-]
-
 
 def get_twilio_client() -> Client:
     """

@@ -19,11 +19,7 @@ from twilio_communications.common.twilio_utils import (
     get_twilio_client,
     build_active_numbers_query,
     build_merge_query,
-    get_lookup_limit,
-    RAW_SCHEMA_NAME,
-    RAW_TABLE_NAME,
-    MAX_FAILED_NUMBERS_TO_LOG,
-    MERGE_COLUMNS,
+    get_lookup_limit
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +28,28 @@ LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this.
 TWILIO_API_DELAY_SECONDS: float = 0.05  # Small delay between API calls
 TWILIO_FIELDS = ["caller_name", "line_type_intelligence"]
 RAW_SCHEMA_NAME: str = "TWILIO"
+RAW_TABLE_NAME="REVERSE_NUMBER_LOOKUPS"
+MAX_FAILED_NUMBERS_TO_LOG: int = 10  # Max failed numbers to log details for.
+
+# Define all columns for the merge operation to avoid duplication
+MERGE_COLUMNS: list[str] = [
+    "PHONE_NUMBER_E164",
+    "PHONE_NUMBER_NATIONAL_FORMAT",
+    "PHONE_TYPE",
+    "CARRIER_NAME",
+    "COUNTRY_CODE",
+    "CALLING_COUNTRY_CODE",
+    "MOBILE_COUNTRY_CODE",
+    "MOBILE_NETWORK_CODE",
+    "CALLER_NAME",
+    "CALLER_TYPE",
+    "IS_VALID",
+    "VALIDATION_ERRORS",
+    "_ERROR_CODE_CALLER",
+    "_ERROR_CODE_LINE_TYPE",
+    "_LAST_LOOKUP",
+    "_AIRFLOADED_AT",
+]
 
 class TwilioLookupOperator(BaseOperator):
     """Operator for performing Twilio reverse phone number lookups and loading to Snowflake.
