@@ -53,7 +53,7 @@ base_url: str = "https://t2c-api.solutionsbytext.com"
 default_page_size: int = 1000  # API default is 10
 TOKEN_EXPIRATION_IN_SECONDS: int = 30 * 60  # 30 minutes
 api_date_format: str = "MM/DD/YYYY HH:mm:ss"
-api_start_date: datetime = datetime(2023, 5, 1, tz='UTC')
+api_start_date: DateTime = datetime(2023, 5, 1, tz='UTC')
 
 # Lazy load these to avoid Variable.get() at import time
 def get_brands():
