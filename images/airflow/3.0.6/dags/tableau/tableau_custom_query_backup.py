@@ -6,11 +6,7 @@ from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
 from pendulum import datetime, duration, now, instance, DateTime
 
-from above.common.constants import (
-    S3_DATALAKE_BUCKET,
-    TABLEAU_BACKUP_BUCKET_DIRECTORY,
-    TABLEAU_CUSTOM_QUERY_BUCKET_DIRECTORY,
-)
+from above.common.constants import lazy_constants
 from tableau.utils.tableau_utils import get_tableau_dag_default_args
 
 if TYPE_CHECKING:
@@ -124,13 +120,13 @@ def process_workbook_file(
 
             # Upload to S3
             s3_key = os.path.join(
-                TABLEAU_BACKUP_BUCKET_DIRECTORY,
-                TABLEAU_CUSTOM_QUERY_BUCKET_DIRECTORY,
+                lazy_constants.TABLEAU_BACKUP_BUCKET_DIRECTORY,
+                lazy_constants.TABLEAU_CUSTOM_QUERY_BUCKET_DIRECTORY,
                 os.path.basename(output_file),
             )
             copy_file_to_s3(
                 file_path=output_file,
-                s3_bucket=S3_DATALAKE_BUCKET,
+                s3_bucket=lazy_constants.S3_DATALAKE_BUCKET,
                 s3_key=s3_key,
             )
             logger.info(f"Saved queries to S3: {s3_key}")
@@ -158,7 +154,7 @@ def backup_custom_tableau_queries() -> None:
 
     try:
         s3_hook: S3Hook = S3Hook(aws_conn_id=None)
-        s3_bucket: "Bucket" = s3_hook.get_bucket(bucket_name=S3_DATALAKE_BUCKET)
+        s3_bucket: "Bucket" = s3_hook.get_bucket(bucket_name=lazy_constants.S3_DATALAKE_BUCKET)
     except Exception as e:
         logger.error(f"Failed to connect to S3: {e}")
         raise AirflowException(f"Failed to connect to S3: {e}")
@@ -166,7 +162,7 @@ def backup_custom_tableau_queries() -> None:
     # Find workbooks modified after the specified date
     workbook_object_summaries: list["ObjectSummary"] = [
         obj
-        for obj in s3_bucket.objects.filter(Prefix=TABLEAU_BACKUP_BUCKET_DIRECTORY)
+        for obj in s3_bucket.objects.filter(Prefix=lazy_constants.TABLEAU_BACKUP_BUCKET_DIRECTORY)
         if obj.key.endswith((".twb", ".twbx"))
         and (instance(obj.last_modified, "UTC") > modified_after)
     ]
@@ -193,7 +189,7 @@ def backup_custom_tableau_queries() -> None:
 @dag(
     dag_id=this_filename,
     description="Extract and backup custom SQL queries from Tableau workbooks in S3",
-    tags=["data", "tableau", "backup", "sql"],
+    tags=["tableau", "backup", "non_alert"],
     schedule="20 03 * * *",  # Daily 10:20pm CST (03:20 UTC)
     start_date=dag_start_date,
     max_active_runs=1,

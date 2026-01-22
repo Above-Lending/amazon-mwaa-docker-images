@@ -13,29 +13,43 @@ from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 from twilio.rest.lookups.v2.phone_number import PhoneNumberInstance
 
-from above.common.constants import (
-    RAW_DATABASE_NAME,
-    SNOWFLAKE_CONN_ID,
-    TRUSTED_DATABASE_NAME,
-    ENVIRONMENT_FLAG,
-)
+from above.common.constants import lazy_constants
 from above.common.snowflake_utils import dataframe_to_snowflake, query_to_dataframe
 from twilio_communications.common.twilio_utils import (
     get_twilio_client,
     build_active_numbers_query,
     build_merge_query,
-    LOOKUP_LIMIT,
-    LOOKUP_REFRESH_MONTHS,
-    TWILIO_FIELDS,
-    RAW_SCHEMA_NAME,
-    RAW_TABLE_NAME,
-    MAX_FAILED_NUMBERS_TO_LOG,
-    TWILIO_API_DELAY_SECONDS,
-    MERGE_COLUMNS,
+    get_lookup_limit
 )
 
 logger = logging.getLogger(__name__)
 
+LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this.
+TWILIO_API_DELAY_SECONDS: float = 0.05  # Small delay between API calls
+TWILIO_FIELDS = ["caller_name", "line_type_intelligence"]
+RAW_SCHEMA_NAME: str = "TWILIO"
+RAW_TABLE_NAME="REVERSE_NUMBER_LOOKUPS"
+MAX_FAILED_NUMBERS_TO_LOG: int = 10  # Max failed numbers to log details for.
+
+# Define all columns for the merge operation to avoid duplication
+MERGE_COLUMNS: list[str] = [
+    "PHONE_NUMBER_E164",
+    "PHONE_NUMBER_NATIONAL_FORMAT",
+    "PHONE_TYPE",
+    "CARRIER_NAME",
+    "COUNTRY_CODE",
+    "CALLING_COUNTRY_CODE",
+    "MOBILE_COUNTRY_CODE",
+    "MOBILE_NETWORK_CODE",
+    "CALLER_NAME",
+    "CALLER_TYPE",
+    "IS_VALID",
+    "VALIDATION_ERRORS",
+    "_ERROR_CODE_CALLER",
+    "_ERROR_CODE_LINE_TYPE",
+    "_LAST_LOOKUP",
+    "_AIRFLOADED_AT",
+]
 
 class TwilioLookupOperator(BaseOperator):
     """Operator for performing Twilio reverse phone number lookups and loading to Snowflake.
@@ -52,7 +66,6 @@ class TwilioLookupOperator(BaseOperator):
         lookup_refresh_months: Refresh lookups older than this many months.
         api_delay_seconds: Delay between API calls to avoid rate limits.
         max_failed_numbers_to_log: Maximum number of failed phone numbers to log.
-        sql_template_dir: Directory containing SQL template files.
         skip_on_empty: Skip execution if no numbers need lookup.
         write_to_snowflake: Whether to write results (False for testing).
         **kwargs: Additional BaseOperator arguments.
@@ -64,12 +77,11 @@ class TwilioLookupOperator(BaseOperator):
         self,
         raw_table_name: str = RAW_TABLE_NAME,
         raw_schema_name: str = RAW_SCHEMA_NAME,
-        twilio_fields: list[str] | None = None,
-        lookup_limit: int = LOOKUP_LIMIT,
+        twilio_fields: list[str] | None = TWILIO_FIELDS,
+        lookup_limit: int = get_lookup_limit(),
         lookup_refresh_months: int = LOOKUP_REFRESH_MONTHS,
         api_delay_seconds: float = TWILIO_API_DELAY_SECONDS,
         max_failed_numbers_to_log: int = MAX_FAILED_NUMBERS_TO_LOG,
-        sql_template_dir: str | None = None,
         skip_on_empty: bool = True,
         write_to_snowflake: bool = True,
         *args,
@@ -83,7 +95,6 @@ class TwilioLookupOperator(BaseOperator):
         self.lookup_refresh_months = lookup_refresh_months
         self.api_delay_seconds = api_delay_seconds
         self.max_failed_numbers_to_log = max_failed_numbers_to_log
-        self.sql_template_dir = sql_template_dir
         self.skip_on_empty = skip_on_empty
         self.write_to_snowflake = write_to_snowflake
 
@@ -94,8 +105,8 @@ class TwilioLookupOperator(BaseOperator):
         :return: SQL query string
         """
         return build_active_numbers_query(
-            trusted_database=TRUSTED_DATABASE_NAME,
-            raw_database=RAW_DATABASE_NAME,
+            trusted_database=lazy_constants.TRUSTED_DATABASE_NAME,
+            raw_database=lazy_constants.RAW_DATABASE_NAME,
             raw_schema=self.raw_schema_name,
             raw_table=self.raw_table_name,
             lookup_refresh_months=self.lookup_refresh_months,
@@ -109,7 +120,7 @@ class TwilioLookupOperator(BaseOperator):
         :return: SQL MERGE statement
         """
         return build_merge_query(
-            raw_database=RAW_DATABASE_NAME,
+            raw_database=lazy_constants.RAW_DATABASE_NAME,
             raw_schema=self.raw_schema_name,
             raw_table=self.raw_table_name,
             suffix=suffix,
@@ -131,8 +142,8 @@ class TwilioLookupOperator(BaseOperator):
 
         :return: Configured SnowflakeHook
         """
-        hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-        hook.database = RAW_DATABASE_NAME
+        hook: SnowflakeHook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
+        hook.database = lazy_constants.RAW_DATABASE_NAME
         hook.schema = RAW_SCHEMA_NAME
         return hook
 
@@ -154,17 +165,17 @@ class TwilioLookupOperator(BaseOperator):
 
         number_of_lookups: int = len(phone_numbers_df.index)
 
-        if number_of_lookups > LOOKUP_LIMIT:
+        if number_of_lookups > self.lookup_limit:
             warn_msg = (
                 f"Number of phone numbers ({number_of_lookups}) exceeds "
-                f"failsafe lookup limit {LOOKUP_LIMIT}."
-                f"Limiting to lookup limit {LOOKUP_LIMIT}."
+                f"failsafe lookup limit {self.lookup_limit}."
+                f"Limiting to lookup limit {self.lookup_limit}."
             )
             # TODO: Have a slack hook that pops this into the airflow chat as a warning.
             logger.error(warn_msg)
 
             # Set the number of phone numbers as the lookup limit.
-            phone_numbers_df = phone_numbers_df.head(LOOKUP_LIMIT)
+            phone_numbers_df = phone_numbers_df.head(self.lookup_limit)
 
         logger.info(f"{number_of_lookups} phone numbers need reverse lookups")
         return phone_numbers_df
@@ -357,13 +368,13 @@ class TwilioLookupOperator(BaseOperator):
         suffix: str = "_UPDATES"
         update_table_name: str = f"{RAW_TABLE_NAME}{suffix}"
 
-        if ENVIRONMENT_FLAG == "prod":
+        if lazy_constants.ENVIRONMENT_FLAG == "prod":
             try:
                 with snowflake_hook.get_conn() as snowflake_connection:
                     # Write updates table
                     dataframe_to_snowflake(
                         results_df,
-                        database_name=RAW_DATABASE_NAME,
+                        database_name=lazy_constants.RAW_DATABASE_NAME,
                         schema_name=RAW_SCHEMA_NAME,
                         table_name=update_table_name,
                         overwrite=True,

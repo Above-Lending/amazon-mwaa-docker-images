@@ -4,18 +4,21 @@ import logging
 from tempfile import TemporaryDirectory
 import json
 import os
+import typing
 
 import pandas as pd
 from airflow.exceptions import AirflowException
 from airflow.sdk import Variable
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from mypy_boto3_s3.service_resource import Bucket
+
+if typing.TYPE_CHECKING:
+    from mypy_boto3_s3.service_resource import Bucket
 
 logger = logging.getLogger(__name__)
 
 def put_df_to_s3_bucket(
     df: pd.DataFrame,
-    s3_bucket: Bucket,
+    s3_bucket: "Bucket",
     s3_key: str,
     file_format: str = "json",
 ) -> None:

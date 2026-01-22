@@ -44,7 +44,7 @@ def get_tableau_dag_default_args() -> dict[str, Any]:
     :return: Dictionary of default arguments
     """
     # Import here to avoid triggering Variable.get() at module import time
-    from above.common.constants import ENVIRONMENT_FLAG
+    from above.common.constants import lazy_constants
     
     return dict(
         owner="Data Engineering",
@@ -53,6 +53,6 @@ def get_tableau_dag_default_args() -> dict[str, Any]:
         retry_delay=duration(minutes=10),
         execution_timeout=duration(minutes=120),
         on_failure_callback=task_failure_slack_alert
-        if ENVIRONMENT_FLAG == "prod"
+        if lazy_constants.ENVIRONMENT_FLAG == "prod"
         else None,
     )

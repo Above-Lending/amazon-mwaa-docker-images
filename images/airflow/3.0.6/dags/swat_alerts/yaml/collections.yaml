@@ -21,7 +21,7 @@ collections:
     cron_schedule: "10 6 * * *"
     enabled: true
     job:
-      - view_name: collections_dialer_list_load_alert
+      - view_name: CRITERIA_COLLECTIONS_DIALER_LIST_LOAD
         channel: alerts-data-bi
         title: "Dialer List Load Issues!"
         send_on_zero_results: false

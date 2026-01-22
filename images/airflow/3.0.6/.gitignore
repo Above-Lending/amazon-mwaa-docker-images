@@ -15,3 +15,4 @@ variables*.json
 venv
 .mypy_cache
 .env
+/wheels

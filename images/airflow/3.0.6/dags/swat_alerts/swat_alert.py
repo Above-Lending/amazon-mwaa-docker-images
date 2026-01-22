@@ -1,27 +1,26 @@
+import json
 import logging
 import os
+import uuid
+from datetime import datetime
 from time import sleep
 from typing import Dict
-from datetime import datetime
 from zoneinfo import ZoneInfo
+
 import pandas as pd
 import pendulum
 import yaml
-import json
-import pandas as pd
+from above.common.constants import lazy_constants
 from airflow import DAG
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.sdk import Variable
 from pandas import DataFrame
 from pendulum import datetime, now
-import uuid
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from above.common.constants import (SNOWFLAKE_CONN_ID, SNOWFLAKE_SWAT_VIEWS,
-                                    SWAT_YAML_FOLDER, ENVIRONMENT_FLAG)
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -52,6 +51,7 @@ CHANNELS = {
     "alerts-servicing":              "C08SR04K1E1",
     "alerts-special-handling":       "C02TR6AGUAD",
     "logs-apps-prod":                "C053MEDFND9",
+    "logs-capital-markets":          "C09KYAYR1AN",
     "logs-collections":              "C09GU35A01K",
     "logs-credit-model-variables":   "C08PJCYKWN9",
     "logs-data-bi":                  "C09C9EQ0KN0",
@@ -61,7 +61,7 @@ CHANNELS = {
 }
 
 def log_error(msg: str, job: str = "") -> None:
-    if ENVIRONMENT_FLAG == "prod":
+    if lazy_constants.ENVIRONMENT_FLAG == "prod":
         send_slack_message(DEBUG_CHANNEL, job, msg)
     else:
         send_slack_message(DEV_CHANNEL, job, msg)
@@ -69,6 +69,7 @@ def log_error(msg: str, job: str = "") -> None:
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
 
 def expand_hour_field(hour_field: str) -> list[int]:
     hours = set()
@@ -119,7 +120,7 @@ def convert_local_standard_cron_to_utc(cron_expr: str, local_timezone: str = "Am
 # Function to send messages to Slack
 def send_slack_message(chan: str, title: str, message: str = "") -> None:
     text = f"{title}\n{message}\nTimestamp: {now().to_datetime_string()}"
-    if ENVIRONMENT_FLAG == "prod":
+    if lazy_constants.ENVIRONMENT_FLAG == "prod":
         channel = chan
     else:
         channel = DEV_CHANNEL
@@ -134,7 +135,7 @@ def send_slack_message(chan: str, title: str, message: str = "") -> None:
 
 # Function to send file to Slack
 def send_slack_file(chan: str, filename: str, file_path: str, message: str) -> None:
-    if ENVIRONMENT_FLAG == "prod":
+    if lazy_constants.ENVIRONMENT_FLAG == "prod":
         channel = chan
     else: 
         channel = DEV_CHANNEL
@@ -157,10 +158,10 @@ def send_slack_file(chan: str, filename: str, file_path: str, message: str) -> N
 
 
 def log_to_snowflake(schema: str, job_name: str, title: str, result_count: int, results: str):
-    if ENVIRONMENT_FLAG != "prod":
+    if lazy_constants.ENVIRONMENT_FLAG != "prod":
         return
     try:
-        snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
         chicago_time = pendulum.now("America/Chicago").to_datetime_string()
         sql = """
             INSERT INTO alerts.logs.alert_logs (log_timestamp, schema_name, job_name, title, result_count, results)
@@ -174,10 +175,10 @@ def log_to_snowflake(schema: str, job_name: str, title: str, result_count: int, 
 
 
 def log_to_snowflake_hist(schema: str, job_name: str, df):
-    if ENVIRONMENT_FLAG != "prod":
+    if lazy_constants.ENVIRONMENT_FLAG != "prod":
         return
     try:
-        snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
         completed_at = pendulum.now("America/Chicago")
         job_run_uuid = str(uuid.uuid4())
         alert_key = f"{schema.upper()}::{job_name.upper()}"
@@ -246,7 +247,7 @@ def log_to_snowflake_hist(schema: str, job_name: str, df):
 
 def run_snowflake_query(query: str) -> DataFrame:
     try:
-        snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
         sql_engine = snowflake_hook.get_sqlalchemy_engine()
         dataframe = pd.read_sql(query, sql_engine)
         return dataframe
@@ -258,7 +259,7 @@ def run_snowflake_query(query: str) -> DataFrame:
         return pd.DataFrame()
 
 def get_extract_df(job_name: str, schema: str) -> DataFrame:
-    query = f"SELECT * FROM {SNOWFLAKE_SWAT_VIEWS}.{schema}.{job_name}"
+    query = f"SELECT * FROM {lazy_constants.SNOWFLAKE_SWAT_VIEWS}.{schema}.{job_name}"
     try:
         df = run_snowflake_query(query)
         if not isinstance(df, pd.DataFrame):
@@ -336,6 +337,7 @@ def create_dynamic_dag(observation: Dict) -> DAG:
 
         @dag(
             dag_id=f"swat__{bundle_name}",
+            tags=["swat", "alert"],
             schedule=cron_schedule,
             start_date=datetime(2025, 3, 20),
             catchup=False,
@@ -402,9 +404,9 @@ def create_dynamic_dag(observation: Dict) -> DAG:
 
 def load_jobs_from_yaml_directory():
     jobs = []
-    for filename in os.listdir(SWAT_YAML_FOLDER):
+    for filename in os.listdir(lazy_constants.SWAT_YAML_FOLDER):
         if filename.endswith(".yaml"):
-            file_path = os.path.join(SWAT_YAML_FOLDER, filename)
+            file_path = os.path.join(lazy_constants.SWAT_YAML_FOLDER, filename)
             try:
                 with open(file_path, "r") as file:
                     yaml_data = yaml.safe_load(file)

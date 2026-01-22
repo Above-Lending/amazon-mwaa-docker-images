@@ -13,11 +13,10 @@ from pandas import DataFrame, concat
 from pendulum import (
     DateTime, datetime, now, parse
 )
-from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 from trustpilot import client
 
-from above.common.constants import RAW_DATABASE_NAME, SNOWFLAKE_CONN_ID
+from above.common.constants import lazy_constants
 from above.common.slack_alert import task_failure_slack_alert
 from above.common.snowflake_utils import (
     dataframe_to_snowflake,
@@ -27,13 +26,40 @@ from above.common.snowflake_utils import (
 logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
 
-snowflake_hook: SnowflakeHook = SnowflakeHook(SNOWFLAKE_CONN_ID)
-sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
-snowflake_connection = snowflake_hook.get_conn()
+# Lazy initialization to avoid DB connections at import time
+_snowflake_hook = None
+_sql_engine = None
+_snowflake_connection = None
+_trustpilot_env = None
 database_schema: str = "TRUSTPILOT"
 
-trustpilot_env: Dict = json.loads(Variable.get("trustpilot"))
-BUSINESS_UNIT_ID: str = trustpilot_env["BUSINESS_UNIT_ID"]
+def get_snowflake_hook():
+    global _snowflake_hook
+    if _snowflake_hook is None:
+        _snowflake_hook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
+    return _snowflake_hook
+
+def get_sql_engine():
+    global _sql_engine
+    if _sql_engine is None:
+        _sql_engine = get_snowflake_hook().get_sqlalchemy_engine()
+    return _sql_engine
+
+def get_snowflake_connection():
+    global _snowflake_connection
+    if _snowflake_connection is None:
+        _snowflake_connection = get_snowflake_hook().get_conn()
+    return _snowflake_connection
+
+def get_trustpilot_env():
+    global _trustpilot_env
+    if _trustpilot_env is None:
+        _trustpilot_env = json.loads(Variable.get("trustpilot"))
+    return _trustpilot_env
+
+def get_business_unit_id():
+    return get_trustpilot_env()["BUSINESS_UNIT_ID"]
+
 api_start_timestamp: DateTime = datetime(1970, 1, 1, tz='UTC')
 
 def get_latest_timestamp_from_table(
@@ -53,7 +79,7 @@ def get_latest_timestamp_from_table(
                     MAX(CONVERT_TIMEZONE('UTC', "{column_name}")), 
                     '{api_start_timestamp.isoformat()}'::TIMESTAMP_TZ
                ) AS latest_timestamp
-        FROM {RAW_DATABASE_NAME}.{database_schema}.{table_name}
+        FROM {lazy_constants.RAW_DATABASE_NAME}.{database_schema}.{table_name}
         """
     )
     latest_timestamp: DateTime = api_start_timestamp
@@ -100,11 +126,11 @@ def get_private_reviews():
         )
 
         client.default_session.setup(
-            api_host=trustpilot_env["API_HOST"],
-            api_key=trustpilot_env["API_KEY"]
+            api_host=get_trustpilot_env()["API_HOST"],
+            api_key=get_trustpilot_env()["API_KEY"]
         )
         response = client.get(
-            f"https://api.trustpilot.com/v1/business-units/{BUSINESS_UNIT_ID}/reviews",
+            f"https://api.trustpilot.com/v1/business-units/{get_business_unit_id()}/reviews",
             params=params
         )
 
@@ -136,7 +162,7 @@ def get_private_reviews():
         df.columns = df.columns.str.upper()
         dataframe_to_snowflake(
             df,
-            database_name=RAW_DATABASE_NAME,
+            database_name=lazy_constants.RAW_DATABASE_NAME,
             schema_name=database_schema,
             table_name="REVIEWS",
             overwrite=False
@@ -151,8 +177,8 @@ def _get_new_consumer_ids_from_reviews() -> Tuple:
     query: str = dedent(
         f"""
             select consumer:id as consumer_id
-            FROM {RAW_DATABASE_NAME}.{database_schema}.REVIEWS r 
-            left outer join {RAW_DATABASE_NAME}.{database_schema}.CONSUMERS c on r.consumer:id = c.id
+            FROM {lazy_constants.RAW_DATABASE_NAME}.{database_schema}.REVIEWS r 
+            left outer join {lazy_constants.RAW_DATABASE_NAME}.{database_schema}.CONSUMERS c on r.consumer:id = c.id
             where c.id is null
         """
     )
@@ -177,8 +203,8 @@ def get_consumer_profiles():
     df: DataFrame = DataFrame()
 
     client.default_session.setup(
-                api_host=trustpilot_env["API_HOST"],
-                api_key=trustpilot_env["API_KEY"]
+                api_host=get_trustpilot_env()["API_HOST"],
+                api_key=get_trustpilot_env()["API_KEY"]
             )
 
     response = client.post(
@@ -206,7 +232,7 @@ def get_consumer_profiles():
         df.columns = df.columns.str.upper()
         dataframe_to_snowflake(
             df,
-            database_name=RAW_DATABASE_NAME,
+            database_name=lazy_constants.RAW_DATABASE_NAME,
             schema_name=database_schema,
             table_name="CONSUMERS",
             overwrite=False
@@ -217,7 +243,7 @@ def get_consumer_profiles():
 @dag(
     dag_id=this_filename,
     description="Extracts Trustpilot API data, loads into the data warehouse",
-    tags=['data', 'trustpilot'],
+    tags=['trustpilot', 'non_alert'],
     schedule="17 09 * * *",  # Daily 0317 CST/0417 CDT
     start_date=api_start_timestamp,
     max_active_runs=1,
