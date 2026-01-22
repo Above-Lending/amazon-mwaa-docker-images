@@ -23,7 +23,6 @@ apache-airflow-providers-ssh
 
 
 # Custom 3rd Party Packages
-filesplit
 pyyaml
 requests
 sbt

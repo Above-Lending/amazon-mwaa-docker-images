@@ -12,7 +12,6 @@ from tempfile import TemporaryDirectory
 import pandas as pd
 from airflow.models import BaseOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from fsplit.filesplit import Filesplit as FileSplit
 
 # TODO add support for csv.gz
 supported_file_extensions = [
@@ -85,10 +84,17 @@ class UnzipSplitFilesOperator(PreprocessFilesBaseOperator):
     ):
         with TemporaryDirectory('w') as out_dir:
             # split the file into ~100MB chunks
-            fs = FileSplit(
-                file=filename, splitsize=splitsize, output_dir=out_dir
-            )
-            fs.split(include_header=True)
+            # Estimate rows per chunk (assuming ~1KB per row on average)
+            rows_per_chunk = splitsize // 1024
+            
+            file_count = 0
+            for chunk in pd.read_csv(filename, chunksize=rows_per_chunk, low_memory=False):
+                file_count += 1
+                out_filename = f"{os.path.basename(filename)}_manifest_{file_count}"
+                out_filepath = os.path.join(out_dir, out_filename)
+                
+                # Write chunk to CSV (header included automatically)
+                chunk.to_csv(out_filepath, index=False)
 
             # Load each of the splits into the temp s3 dir
             for out_file in os.listdir(out_dir):
