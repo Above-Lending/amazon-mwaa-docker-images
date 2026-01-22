@@ -2,16 +2,16 @@ import json
 import logging
 import os
 import requests
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from textwrap import dedent
-from typing import Dict, List
+from typing import Dict, List, Any
 
 from airflow.decorators import dag, task
 from airflow.sdk import Variable
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.exceptions import AirflowFailException
 from pandas import DataFrame
-from pendulum import datetime, now, duration
+from pendulum import datetime, now, duration, DateTime
 from snowflake.connector import SnowflakeConnection
 
 from above.common.constants import lazy_constants
@@ -20,7 +20,7 @@ from above.common.snowflake_utils import dataframe_to_snowflake
 
 logger: logging.Logger = logging.getLogger(__name__)
 this_filename: str = str(os.path.basename(__file__).replace(".py", ""))
-dag_start_date: datetime = datetime(2025, 6, 18, tz="UTC")
+dag_start_date: DateTime = datetime(2025, 6, 18, tz="UTC")
 
 RAW_SCHEMA_NAME: str = "CHECK_COMMERCE"
 
@@ -56,7 +56,7 @@ def get_snowflake_connection() -> SnowflakeConnection:
     return get_snowflake_hook().get_conn()
 
 
-def get_params() -> dict:
+def get_params() -> dict[str, str]:
     return {
         "UserName": get_merchant_number(),
         "Password": get_merchant_password(),
@@ -65,8 +65,8 @@ def get_params() -> dict:
     }
 
 
-def get_token(AUTH_URL: str, PARAMS: dict) -> List:
-    auth_response = requests.get(AUTH_URL, params=PARAMS)
+def get_token(auth_url: str, params: dict[str, str]) -> Any:
+    auth_response = requests.get(auth_url, params=params)
     auth_data = auth_response.json()
     TOKEN = auth_data.get("Token")
     if not TOKEN:
@@ -75,7 +75,7 @@ def get_token(AUTH_URL: str, PARAMS: dict) -> List:
     return TOKEN
 
 
-def make_api_request(report_url: str, report_params: dict) -> List:
+def make_api_request(report_url: str, report_params: dict[str, str]) -> List:
     try:
         report_response = requests.get(report_url, params=report_params)
     except ValueError:
@@ -91,12 +91,13 @@ def response_to_dataframe(report_response: List) -> DataFrame:
     try:
         report_data = report_response.json()
         df = DataFrame(report_data["ReportData"]["Table0"])
+        return df
     except ValueError:
         logger.error("Invalid value")
+        raise AirflowFailException()
     except Exception as e:
         logger.error(f"Other error: {e}")
-    return df
-
+        raise AirflowFailException()
 
 @task
 def get_and_load_merchant_list(RAW_TABLE_NAME: str) -> None:
@@ -117,11 +118,11 @@ def get_and_load_merchant_list(RAW_TABLE_NAME: str) -> None:
         "Parameter_MID": MERCHANT_NUMBER,
     }
 
-    report_response = make_api_request(
-        report_url=REPORT_URL, report_params=report_params
-    )
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
 
-    if report_response.status_code == 200:
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -221,7 +222,7 @@ def get_and_load_merchant_list(RAW_TABLE_NAME: str) -> None:
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -243,9 +244,12 @@ def get_and_load_merchant_information(RAW_TABLE_NAME: str) -> None:
         "Parameter_MID": MERCHANT_NUMBER,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -312,7 +316,7 @@ def get_and_load_merchant_information(RAW_TABLE_NAME: str) -> None:
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -338,9 +342,12 @@ def get_and_load_invoice_aggregate_line_items(
         "Parameter_Month": REPORT_MONTH,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -439,7 +446,7 @@ def get_and_load_invoice_aggregate_line_items(
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -466,9 +473,12 @@ def get_and_load_invoice_aggregate_demographic_data(RAW_TABLE_NAME: str) -> None
         "Parameter_Month": report_month,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
     if not df.empty:
@@ -630,7 +640,7 @@ def get_and_load_invoice_aggregate_demographic_data(RAW_TABLE_NAME: str) -> None
             logger.error(f"Other error: {e}")
             raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -656,9 +666,12 @@ def get_and_load_aggregator_merchant_invoice(
         "Parameter_Year": REPORT_YEAR,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -759,7 +772,7 @@ def get_and_load_aggregator_merchant_invoice(
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -785,9 +798,12 @@ def get_and_load_transaction_log(
         "Parameter_DateProcessEnd": END_DATE,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -975,7 +991,7 @@ def get_and_load_transaction_log(
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -1001,9 +1017,12 @@ def get_and_load_returned_transactions(
         "Parameter_ReturnDateEnd": END_DATE,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -1191,7 +1210,7 @@ def get_and_load_returned_transactions(
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -1217,9 +1236,12 @@ def get_and_load_effective_entry_date_transactions(
         "Parameter_EEDEnd": END_DATE,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -1407,7 +1429,7 @@ def get_and_load_effective_entry_date_transactions(
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -1433,9 +1455,12 @@ def get_and_load_remittance_information(
         "Parameter_EndDate": END_DATE,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -1605,7 +1630,7 @@ def get_and_load_remittance_information(
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @task
@@ -1631,9 +1656,12 @@ def get_and_load_disbursement_information(
         "Parameter_EndDate": END_DATE,
     }
 
-    report_response = make_api_request(report_params)
+    report_response = make_api_request(report_url=REPORT_URL, report_params=report_params)
 
-    if report_response.status_code == 200:
+    response_status_code: int = report_response.status_code
+    response_text: str = report_response.text
+
+    if response_status_code == 200:
         df = response_to_dataframe(report_response)
 
         if not df.empty:
@@ -1785,7 +1813,7 @@ def get_and_load_disbursement_information(
                 logger.error(f"Other error: {e}")
                 raise AirflowFailException()
     else:
-        logger.info(report_response.text)
+        logger.info(response_text)
 
 
 @dag(
