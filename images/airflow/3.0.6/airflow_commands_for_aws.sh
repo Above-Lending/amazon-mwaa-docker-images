@@ -1,5 +1,7 @@
 # Download and build the wheels for the requirements.
 awk 'NR > 3' ./requirements/mwaa-requirements.txt > ./requirements/download-requirements.txt 
+rm -rf ./wheels/
+rm -rf ./plugins/plugins.zip
 docker run --platform linux/amd64 --rm -v $(pwd):/workspace -w /workspace python:3.12-slim \
   pip download -r ./requirements/download-requirements.txt \
   --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.0.6/constraints-3.12.txt \

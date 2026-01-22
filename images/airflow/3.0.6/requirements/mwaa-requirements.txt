@@ -17,10 +17,18 @@
 apache-airflow-providers-amazon[aiobotocore]
 apache-airflow-providers-snowflake
 apache-airflow-providers-slack
+
+# Do we need this?
 apache-airflow-providers-ssh
+
 
 # Custom 3rd Party Packages
 filesplit
+pyyaml
+requests
+sbt
+sendgrid
 tableauserverclient
 trustpilot
+snowflake-connector-python[pandas]
 twilio
