@@ -1731,7 +1731,7 @@ def get_and_load_disbursement_information(RAW_TABLE_NAME: str, START_DATE: str, 
 @dag(
     dag_id=this_filename,
     description="Extracts data from the Check Commerce API",
-    tags=["data", "check_commerce", "payments"],
+    tags=["check_commerce", "non_alert"],
     schedule="0 13 * * *",  # Daily at 8am CT
     start_date=dag_start_date,
     max_active_runs=1,

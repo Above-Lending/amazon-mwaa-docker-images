@@ -5,6 +5,7 @@ from airflow.operators.bash import BashOperator
 
 with DAG(
     dag_id='__debug_list_python_packages',
+    tags=['debugging', "non_alert"],
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False

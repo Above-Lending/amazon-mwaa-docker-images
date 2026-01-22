@@ -14,13 +14,10 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from pandas import DataFrame
 from pendulum import datetime, now, duration
 from sqlalchemy.engine import Engine
-from typing_extensions import LiteralString
 from above.common.constants import lazy_constants
 
-from above.common.constants import SNOWFLAKE_CONN_ID
 from above.common.slack_alert import task_failure_slack_alert
 from talkdesk.common.talkdesk import get_talkdesk_api_auth_token
-from above.common.constants import ENVIRONMENT_FLAG
 
 
 
@@ -40,7 +37,7 @@ def insert_log(table_name: str, values: Dict[str, Any], fail_on_error: bool = Fa
     sql = f"""INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"""
 
     try:
-        snowflake_hook = SnowflakeHook(SNOWFLAKE_CONN_ID)
+        snowflake_hook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
         snowflake_hook.run(sql, parameters=params)
 
         logger.info("Inserted log into %s | values=%s", table_name, values)
@@ -62,7 +59,7 @@ def query_to_dataframe(query: str) -> DataFrame:
     :return: result
     """
     logger.info(f"Executing query:\n{query}")
-    snowflake_hook: SnowflakeHook = SnowflakeHook(lazy_constantsSNOWFLAKE_CONN_ID)
+    snowflake_hook: SnowflakeHook = SnowflakeHook(lazy_constants.SNOWFLAKE_CONN_ID)
     sql_engine: Engine = snowflake_hook.get_sqlalchemy_engine()
     dataframe: DataFrame = pd.read_sql(query, sql_engine)
     return dataframe
@@ -178,7 +175,7 @@ def create_talkdesk_record_lists(auth_token: str, view_name: str, record_list_na
 
 @task
 def add_records(auth_token: str, view_name: str, record_list_id: str):
-    if  ENVIRONMENT_FLAG == "prod":
+    if  lazy_constants.ENVIRONMENT_FLAG == "prod":
         add_records_to_list(auth_token, view_name, record_list_id)
 
 
@@ -284,7 +281,7 @@ def purge_list(auth_token: str, record_list_id: str, limit: int = 100):
 @dag(
     dag_id=this_modules_name,
     description="Uploads dialer list from the Data Warehouse to TalkDesk",
-    tags=["data", "talkdesk"],
+    tags=["talkdesk", "dialer", "non_alert"],
     schedule="12 10 * * 0-5",  # Sun-Fri 0412 CST/0512 CDT
     start_date=start_date,
     max_active_runs=1,

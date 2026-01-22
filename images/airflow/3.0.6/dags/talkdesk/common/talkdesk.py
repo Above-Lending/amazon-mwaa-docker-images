@@ -5,7 +5,7 @@ from typing import Any
 
 import requests
 from airflow.sdk import Variable
-from pendulum import datetime, duration, now, parse, Duration, DateTime
+from pendulum import duration, now, parse, Duration, DateTime
 
 from above.common.constants import lazy_constants
 

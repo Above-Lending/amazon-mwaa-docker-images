@@ -1,6 +1,6 @@
 --find-links /usr/local/airflow/plugins
 --no-index
---constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.0.6/constraints-3.12.txt"
+--constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.0.6/constraints-3.12.txt
 
 ## CUSTOM REQUIREMENTS FOR MWAA FOR ABOVE LENDING.
 

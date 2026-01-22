@@ -19,8 +19,7 @@ from twilio_communications.common.twilio_utils import (
     get_twilio_client,
     build_active_numbers_query,
     build_merge_query,
-    LOOKUP_LIMIT,
-    LOOKUP_REFRESH_MONTHS,
+    get_lookup_limit,
     TWILIO_FIELDS,
     RAW_SCHEMA_NAME,
     RAW_TABLE_NAME,
@@ -31,6 +30,8 @@ from twilio_communications.common.twilio_utils import (
 
 logger = logging.getLogger(__name__)
 
+LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this.
+TWILIO_API_DELAY_SECONDS: float = 0.05  # Small delay between API calls
 
 class TwilioLookupOperator(BaseOperator):
     """Operator for performing Twilio reverse phone number lookups and loading to Snowflake.
@@ -60,7 +61,7 @@ class TwilioLookupOperator(BaseOperator):
         raw_table_name: str = RAW_TABLE_NAME,
         raw_schema_name: str = RAW_SCHEMA_NAME,
         twilio_fields: list[str] | None = None,
-        lookup_limit: int = LOOKUP_LIMIT,
+        lookup_limit: int = get_lookup_limit(),
         lookup_refresh_months: int = LOOKUP_REFRESH_MONTHS,
         api_delay_seconds: float = TWILIO_API_DELAY_SECONDS,
         max_failed_numbers_to_log: int = MAX_FAILED_NUMBERS_TO_LOG,
@@ -149,17 +150,17 @@ class TwilioLookupOperator(BaseOperator):
 
         number_of_lookups: int = len(phone_numbers_df.index)
 
-        if number_of_lookups > LOOKUP_LIMIT:
+        if number_of_lookups > self.lookup_limit:
             warn_msg = (
                 f"Number of phone numbers ({number_of_lookups}) exceeds "
-                f"failsafe lookup limit {LOOKUP_LIMIT}."
-                f"Limiting to lookup limit {LOOKUP_LIMIT}."
+                f"failsafe lookup limit {self.lookup_limit}."
+                f"Limiting to lookup limit {self.lookup_limit}."
             )
             # TODO: Have a slack hook that pops this into the airflow chat as a warning.
             logger.error(warn_msg)
 
             # Set the number of phone numbers as the lookup limit.
-            phone_numbers_df = phone_numbers_df.head(LOOKUP_LIMIT)
+            phone_numbers_df = phone_numbers_df.head(self.lookup_limit)
 
         logger.info(f"{number_of_lookups} phone numbers need reverse lookups")
         return phone_numbers_df

@@ -134,7 +134,7 @@ with DAG(
         dag_id=this_filename,
         description=f"TalkDesk {', '.join(TALKDESK_REPORTS)}"
                     f" from API to Data Warehouse",
-        tags=["data", "talkdesk"],
+        tags=["talkdesk", "non_alert"],
         schedule="15 * * * *",  # every 15 minutes after the hour
         start_date=start_date,
         max_active_runs=1,
