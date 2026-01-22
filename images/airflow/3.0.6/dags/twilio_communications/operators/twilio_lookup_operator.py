@@ -20,11 +20,9 @@ from twilio_communications.common.twilio_utils import (
     build_active_numbers_query,
     build_merge_query,
     get_lookup_limit,
-    TWILIO_FIELDS,
     RAW_SCHEMA_NAME,
     RAW_TABLE_NAME,
     MAX_FAILED_NUMBERS_TO_LOG,
-    TWILIO_API_DELAY_SECONDS,
     MERGE_COLUMNS,
 )
 
@@ -32,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 LOOKUP_REFRESH_MONTHS: int = 12  # Refresh lookups older than this.
 TWILIO_API_DELAY_SECONDS: float = 0.05  # Small delay between API calls
+TWILIO_FIELDS = ["caller_name", "line_type_intelligence"]
+RAW_SCHEMA_NAME: str = "TWILIO"
 
 class TwilioLookupOperator(BaseOperator):
     """Operator for performing Twilio reverse phone number lookups and loading to Snowflake.
@@ -48,7 +48,6 @@ class TwilioLookupOperator(BaseOperator):
         lookup_refresh_months: Refresh lookups older than this many months.
         api_delay_seconds: Delay between API calls to avoid rate limits.
         max_failed_numbers_to_log: Maximum number of failed phone numbers to log.
-        sql_template_dir: Directory containing SQL template files.
         skip_on_empty: Skip execution if no numbers need lookup.
         write_to_snowflake: Whether to write results (False for testing).
         **kwargs: Additional BaseOperator arguments.
@@ -60,12 +59,11 @@ class TwilioLookupOperator(BaseOperator):
         self,
         raw_table_name: str = RAW_TABLE_NAME,
         raw_schema_name: str = RAW_SCHEMA_NAME,
-        twilio_fields: list[str] | None = None,
+        twilio_fields: list[str] | None = TWILIO_FIELDS,
         lookup_limit: int = get_lookup_limit(),
         lookup_refresh_months: int = LOOKUP_REFRESH_MONTHS,
         api_delay_seconds: float = TWILIO_API_DELAY_SECONDS,
         max_failed_numbers_to_log: int = MAX_FAILED_NUMBERS_TO_LOG,
-        sql_template_dir: str | None = None,
         skip_on_empty: bool = True,
         write_to_snowflake: bool = True,
         *args,
@@ -79,7 +77,6 @@ class TwilioLookupOperator(BaseOperator):
         self.lookup_refresh_months = lookup_refresh_months
         self.api_delay_seconds = api_delay_seconds
         self.max_failed_numbers_to_log = max_failed_numbers_to_log
-        self.sql_template_dir = sql_template_dir
         self.skip_on_empty = skip_on_empty
         self.write_to_snowflake = write_to_snowflake
 

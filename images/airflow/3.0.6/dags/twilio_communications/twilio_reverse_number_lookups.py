@@ -39,14 +39,6 @@ DAG_START_DATE = datetime(2024, 6, 1, tz="UTC")
 def twilio_reverse_number_lookups():
     """Twilio Reverse Number Lookups DAG."""
 
-    TwilioLookupOperator(
-        task_id="fetch_and_lookup_numbers",
-        raw_table_name="REVERSE_NUMBER_LOOKUPS",
-        raw_schema_name="TWILIO",
-        twilio_fields=["caller_name", "line_type_intelligence"],
-        max_failed_numbers_to_log=10,
-        skip_on_empty=True,
-        write_to_snowflake=True,
-    )
+    TwilioLookupOperator(task_id="fetch_and_lookup_numbers")
 
 twilio_reverse_number_lookups()
