@@ -212,7 +212,7 @@ aws-xray-sdk==2.14.0
 awswrangler==3.12.1
 azure-batch==14.2.0
 azure-common==1.1.28
-azure-core==1.35.0
+azure-core==1.38.0
 azure-cosmos==4.9.0
 azure-datalake-store==0.0.53
 azure-identity==1.24.0
