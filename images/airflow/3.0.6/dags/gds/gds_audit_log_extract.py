@@ -5,14 +5,13 @@ import requests
 import time
 
 from textwrap import dedent
-from typing import Dict
 from pandas import DataFrame
 
 from airflow.decorators import dag, task
 from airflow.sdk import Variable
 from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
-from pendulum import datetime, duration, now
+from pendulum import datetime, duration, now, DateTime
 
 from above.common.constants import lazy_constants, S3_CONN_ID
 from above.common.check_memory_usage import check_memory_usage
@@ -22,7 +21,7 @@ from above.common.snowflake_utils import snowflake_query_to_pandas_dataframe
 
 logger: logging.Logger = logging.getLogger(__name__)
 THIS_FILENAME: str = str(os.path.basename(__file__).replace(".py", ""))
-DAG_START_DATE: datetime = datetime(2025, 9, 16, tz="UTC")
+DAG_START_DATE: DateTime = datetime(2025, 9, 16, tz="UTC")
 
 # Lazy load to avoid Variable.get() at import time
 def get_gds_credentials():
@@ -93,7 +92,7 @@ def process_batch_of_application_data(batch: list[str]) -> list[str]:
     """Hit API endpoint for each record in the batch."""
     success_count = 0
     failure_count = 0
-    failed_request_ids = []
+    failed_request_ids: list[str] = []
 
     for idx, request_id in enumerate(batch):
         logger.info("On record %s of %s in this batch.", idx + 1, len(batch))
@@ -177,7 +176,7 @@ def report_failed_request_ids(failed_request_ids_batches: list[list[str]]) -> No
     all_failed_request_ids = [
         request_id
         for batch in failed_request_ids_batches
-        if batch is not None
+        if len(batch) > 0
         for request_id in batch
     ]
 
