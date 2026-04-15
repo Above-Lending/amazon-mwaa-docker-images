@@ -12,6 +12,6 @@ rm -rf ./requirements/download-requirements.txt
 zip -j plugins/plugins.zip wheels/* ./requirements/mwaa_essential_constraints.txt
 
 # Upload the plugins.zip and requirements.txt to the S3 bucket.
-aws s3 cp plugins/plugins.zip s3://above-lending-prod-airflow-3-test/plugins.zip
+aws s3 cp plugins/plugins.zip s3://above-lending-prod-airflow-3/plugins.zip
 
-aws s3 cp ./requirements/mwaa-requirements.txt s3://above-lending-prod-airflow-3-test/requirements.txt
+aws s3 cp ./requirements/mwaa-requirements.txt s3://above-lending-prod-airflow-3/requirements.txt

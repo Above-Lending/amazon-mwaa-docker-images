@@ -61,7 +61,7 @@ def gzip_json_and_upload_to_s3(
     json_data: dict | str,
     s3_bucket: str,
     s3_key: str,
-    aws_conn_id: str = "aws_default",
+    aws_conn_id: str | None = "aws_default",
     replace: bool = True,
     verbose: bool = False,
     **context,
@@ -73,7 +73,7 @@ def gzip_json_and_upload_to_s3(
         json_data (dict or str): JSON data to gzip (dict will be serialized)
         s3_bucket (str): S3 bucket name
         s3_key (str): S3 key/path for the file (e.g., 'data/output.json.gz')
-        aws_conn_id (str): Airflow AWS connection ID
+        aws_conn_id (str | None): Airflow AWS connection ID
         replace (bool): If True, replace the file if it already exists in S3
         verbose (bool): If True, print more zipping information
     """
