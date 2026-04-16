@@ -59,7 +59,7 @@ ENV_NAME="local"
 REGION="us-east-1"
 
 # Set to http://host_name:8080
-MWAA__CORE__API_SERVER_URL=""
+MWAA__CORE__API_SERVER_URL="http://mwaa-306-webserver:8080"
 
 # BOM Generation
 GENERATE_BILL_OF_MATERIALS="False"

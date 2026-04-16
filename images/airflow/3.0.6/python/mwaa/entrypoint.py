@@ -6,11 +6,36 @@ first and only argument. It accordingly runs the requested Airflow component
 after setting up the necessary configurations.
 """
 
+# Fix shared log volume permissions before any Airflow imports, since Airflow's
+# logging config tries to create subdirectories under /usr/local/airflow/logs
+# at import time.
+# ruff: noqa: E402
+import os
+import subprocess
+
+def _fix_shared_log_volume_permissions():
+    """
+    When /usr/local/airflow/logs is backed by a shared volume (e.g. for Fluent Bit
+    to tail log files), Docker creates it owned by root. Fix ownership so the
+    airflow user can write logs.
+    """
+    log_dir = "/usr/local/airflow/logs"
+    if os.path.ismount(log_dir):
+        try:
+            subprocess.run(
+                ["sudo", "chown", "-R", "airflow:", log_dir],
+                check=True,
+            )
+            print(f"Fixed ownership of shared log volume {log_dir}")
+        except Exception as e:
+            print(f"WARNING: Could not fix ownership of {log_dir}: {e}")
+
+_fix_shared_log_volume_permissions()
+
 # Setup logging first thing to make sure all logs happen under the right setup. The
 # reason for needing this is that typically a `logger` object is defined at the top
 # of the module and is used through out it. So, if we import a module before logging
 # is setup, its `logger` object will not have the right setup.
-# ruff: noqa: E402
 # fmt: off
 from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
 import logging.config
@@ -20,7 +45,6 @@ logging.config.dictConfig(DEFAULT_LOGGING_CONFIG)
 # Python imports
 import asyncio
 import logging
-import os
 import sys
 import time
 
@@ -37,7 +61,6 @@ from mwaa.config.sqs import (
 )
 from mwaa.utils.cmd import run_command
 from mwaa.utils.dblock import with_db_lock
-from mwaa.utils.statsd import get_statsd
 from mwaa.utils.user_requirements import install_user_requirements
 
 # Usually, we pass the `__name__` variable instead as that defaults to the
@@ -139,34 +162,6 @@ async def airflow_dag_reserialize():
     """
     await run_command("python3 -m mwaa.database.reserialize")
 
-
-async def increase_pool_size_if_insufficient(environ: dict[str, str]):
-    """
-    Increase the default pool size if it is too small.
-
-    Increases the default_pool size to 10000 if it is less than or equal 5000
-    as it improves performance in environments.
-
-    :param environ: A dictionary containing the environment variables.
-    """
-    problematic_pool_size = 5000
-
-    try:
-        command_output = []
-
-        # Get the current default_pool size
-        await run_command("airflow pools get default_pool | grep default_pool | awk '{print $3}'",
-                        env=environ, stdout_logging_method=lambda output : command_output.append(output))
-
-        # Increasing the pool size if it is the default size
-        if len(command_output) == 1 and int(command_output[0]) <= problematic_pool_size:
-            logger.info("Setting default_pool size to 10000.")
-            await run_command("airflow pools set default_pool 10000 default", env=environ)
-            stats = get_statsd()
-            stats.incr("mwaa.pool.increased_default_pool_size", 1)
-    except Exception as error:
-        logger.error(f"Error checking if pool issue is present: {error}")
-
 @with_db_lock(5678)
 async def create_airflow_user(environ: dict[str, str]):
     """
@@ -236,6 +231,7 @@ def create_queue() -> None:
 
 async def main() -> None:
     """Start execution of the script."""
+    _fix_shared_log_volume_permissions()
     try:
         (
             _,
@@ -261,7 +257,6 @@ async def main() -> None:
     if command == "migrate-db":
         await airflow_db_migrate(environ)
         print("Finished running db validations")
-        await increase_pool_size_if_insufficient(environ)
         return
 
     await install_user_requirements(command, environ)
